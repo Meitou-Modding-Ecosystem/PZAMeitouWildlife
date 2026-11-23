@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Offline check tool for PZA's Wildlife for Meitou (author PZA). Compiled against the .NET 11 framework and Meitou assemblies inside the Meitou release, never copied
+       into git; run by ..\..\build.ps1 -Check on a staged copy of that runtime (out\checkrt). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>check</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <NoStdLib>true</NoStdLib>
+    <NoCompilerStandardLib>true</NoCompilerStandardLib>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <UseAppHost>false</UseAppHost>
+    <GenerateRuntimeConfigurationFiles>false</GenerateRuntimeConfigurationFiles>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+  <!-- MeitouDir: passed by build.ps1, else the unpacked Meitou release named in mod\local.props (git-ignored) -->
+  <Import Project="$(MSBuildThisFileDirectory)..\..\local.props" Condition="'$(MeitouDir)' == '' And Exists('$(MSBuildThisFileDirectory)..\..\local.props')" />
+  <ItemGroup>
+    <GameRef Include="$(MeitouDir)\System*.dll;$(MeitouDir)\mscorlib.dll;$(MeitouDir)\netstandard.dll;$(MeitouDir)\Meitou.Core.dll;$(MeitouDir)\MeitouClient.dll;$(MeitouDir)\Meitou.Simulation.dll;$(MeitouDir)\Meitou.Data.dll"
+             Exclude="$(MeitouDir)\*Native*.dll" />
+    <Reference Include="@(GameRef)"><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(MeitouDir)\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <!-- the mod itself (build.ps1 builds it first and copies the staged DLL next to check.dll) -->
+    <Reference Include="PZAWildlife.Meitou"><HintPath>$(ModDll)</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

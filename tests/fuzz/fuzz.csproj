@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- PZA's Wildlife for Meitou: the fuzz harness (author PZA, GPLv3 or later). Compiles the mod's source with PZA's Meitou UI fuzz kit; never shipped.
+       Run: ..\..\mod\build.ps1 -Fuzz, or ..\..\..\PZAMeitouUi\fuzz\run_fuzz.ps1 -Repo ..\.. ; mutation check: python -I ..\..\..\PZAMeitouUi\fuzz\mutate.py ..\.. -->
+  <Import Project="..\..\..\PZAMeitouUi\fuzz\fuzz.props" />
+  <ItemGroup><Compile Include="..\..\mod\src\**\*.cs" Link="mod\%(RecursiveDir)%(Filename)%(Extension)" /></ItemGroup>
+</Project>

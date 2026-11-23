@@ -1,0 +1,29 @@
+# build output
+bin/
+obj/
+build/
+out/
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.dll
+*.dylib
+*.so
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+# local runtime / test output
+*.log
+*.lrec
+meitou.user.json
+# never commit: game files, Meitou binaries or reference assemblies, PhysX / KenshiLib
+*.mesh
+*.skeleton
+*.dds
+*.mod
+gamedata.base
+# your Meitou folder for the build (mod/local.props)
+local.props

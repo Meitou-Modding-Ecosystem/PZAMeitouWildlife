@@ -1,0 +1,9 @@
+# PZA's Wildlife for Meitou - 简体中文 (zh). MACHINE-DRAFTED (machine-drafted by Claude for PZA, 2026-11-22):
+# not yet checked by a native speaker. Corrections are welcome and will be credited. Format: key = text (UTF-8).
+
+mod.name = PZA's Wildlife
+set.carrion = 食腐鸟
+set.carrion.hint = 鸟会飞向尸体，落在旁边啄食；有人走到约 20 米内时会一齐飞起。一套现成的效果，无需调整。
+set.lang = 语言
+set.lang.hint = auto = 游戏的语言。需要重启游戏。
+debug.toggle = Wildlife：食腐鸟 开 / 关

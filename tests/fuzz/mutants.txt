@@ -1,0 +1,87 @@
+# PZA's Wildlife for Meitou: known bugs the fuzz harness must catch (PZAMeitouUi\fuzz\mutate.py). Author: PZA. One block per mutant, verbatim.
+# Header: ID | file from the folder that holds the repos | fuzz targets to run | what it plants
+
+@@ WL-ground | PZAMeitouWildlife\mod\src\WildCore.cs | core.flight | the step's ground clamp left out (a bird can fly into a hill)
+<<<
+        if (float.IsFinite(g) && b.Position.Y < g) b.Position.Y = g;
+        b.Forward = Unit(b.Forward, Vector3.UnitZ);
+===
+        b.Forward = Unit(b.Forward, Vector3.UnitZ);
+>>>
+
+@@ WL-flee | PZAMeitouWildlife\mod\src\WildCore.cs | core.flight | a landed bird never flees (only descending ones check for people)
+<<<
+        bool low = landed || b.Phase == Phase.Descend && b.Position.Y - Ground(b.Position.X, b.Position.Z) < Preset.LowAlert;
+===
+        bool low = b.Phase == Phase.Descend && b.Position.Y - Ground(b.Position.X, b.Position.Z) < Preset.LowAlert;
+>>>
+
+@@ WL-cap | PZAMeitouWildlife\mod\src\WildCore.cs | core.flight | a corpse takes one bird more than its cap
+<<<
+            if (_taken.GetValueOrDefault(c.Key) >= Cap(c)) continue;
+===
+            if (_taken.GetValueOrDefault(c.Key) > Cap(c)) continue;
+>>>
+
+@@ WL-max | PZAMeitouWildlife\mod\src\WildCore.cs | core.flight | no limit on the birds held over every corpse
+<<<
+        if (_held.Count >= Preset.MaxBirds) return null;
+===
+        if (_held.Count >= Preset.MaxBirds * 10) return null;
+>>>
+
+@@ WL-nan-claim | PZAMeitouWildlife\mod\src\WildCore.cs | core.flight | a bird with a NaN place or heading is taken
+<<<
+        if (dt <= 0 || !Finite(position) || !Finite(forward) || _held.ContainsKey(handle)) return null;
+===
+        if (dt <= 0 || _held.ContainsKey(handle)) return null;
+>>>
+
+@@ WL-unit | PZAMeitouWildlife\mod\src\WildCore.cs | core.flight | a zero vector "normalised" into NaN (a bird that did not move this step)
+<<<
+        Finite(v) && v.LengthSquared() > 1e-10f ? Vector3.Normalize(v) : (Finite(fallback) && fallback.LengthSquared() > 1e-10f ? Vector3.Normalize(fallback) : Vector3.UnitZ);
+===
+        Finite(v) ? Vector3.Normalize(v) : (Finite(fallback) && fallback.LengthSquared() > 1e-10f ? Vector3.Normalize(fallback) : Vector3.UnitZ);
+>>>
+
+@@ WL-letgo-down | PZAMeitouWildlife\mod\src\WildCore.cs | core.flight | a bird let go mid-dive keeps its steep heading (the game's flight would fly it into the ground)
+<<<
+        if (f.Y < -0.2f) f = Unit(new Vector3(f.X, 0.2f, f.Z), Vector3.UnitZ);
+===
+        if (f.Y < -0.9f) f = Unit(new Vector3(f.X, 0.2f, f.Z), Vector3.UnitZ);
+>>>
+
+@@ WL-dt | PZAMeitouWildlife\mod\src\WildCore.cs | core.flight | a NaN or infinite step length goes into the motion
+<<<
+    static float Clean(float dt) => float.IsFinite(dt) && dt > 0 ? dt : 0;
+===
+    static float Clean(float dt) => dt > 0 ? dt : 0;
+>>>
+
+@@ WL-near-reach | PZAMeitouWildlife\mod\src\Driver.cs | driver.near | corpses beyond the eye's reach are kept
+<<<
+            if (Flat2(c.Position - eye) <= reach2) s_near.Add(c);
+===
+            s_near.Add(c);
+>>>
+
+@@ WL-near-sort | PZAMeitouWildlife\mod\src\Driver.cs | driver.near | the 32 kept are not the nearest
+<<<
+            s_near.Sort((a, b) => Flat2(a.Position - eye).CompareTo(Flat2(b.Position - eye)));
+===
+            s_near.Sort((a, b) => Flat2(b.Position - eye).CompareTo(Flat2(a.Position - eye)));
+>>>
+
+@@ WL-fold-amount | PZAMeitouWildlife\mod\src\BirdFold.cs | fold | the fold amount not clamped (a level over 100 throws the wings out past the body)
+<<<
+        amount = Math.Clamp(float.IsFinite(amount) ? amount : 0, 0, 1);
+===
+        amount = float.IsFinite(amount) ? Math.Max(amount, 0) : 0;
+>>>
+
+@@ WL-fold-level | PZAMeitouWildlife\mod\src\BirdFold.cs | fold | a marked level outside 0..100 accepted
+<<<
+        if (stop == end || stop - end > 3 || !int.TryParse(name.AsSpan(end, stop - end), out level) || level < 0 || level > 100) return false;
+===
+        if (stop == end || stop - end > 3 || !int.TryParse(name.AsSpan(end, stop - end), out level)) return false;
+>>>

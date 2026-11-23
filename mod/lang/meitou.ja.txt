@@ -1,0 +1,9 @@
+# PZA's Wildlife for Meitou - 日本語 (ja). MACHINE-DRAFTED (machine-drafted by Claude for PZA, 2026-11-22):
+# not yet checked by a native speaker. Corrections are welcome and will be credited. Format: key = text (UTF-8).
+
+mod.name = PZA's Wildlife
+set.carrion = 死骸に集まる鳥
+set.carrion.hint = 鳥が死骸のもとへ舞い降り、そばに止まってついばみます。誰かが約 20 m 以内に近づくと一斉に飛び立ちます。調整不要の既定の設定です。
+set.lang = 言語
+set.lang.hint = auto = ゲームの言語。ゲームの再起動が必要です。
+debug.toggle = Wildlife：死骸に集まる鳥 オン / オフ

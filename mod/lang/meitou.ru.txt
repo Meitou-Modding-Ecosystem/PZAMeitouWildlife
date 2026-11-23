@@ -1,0 +1,9 @@
+# PZA's Wildlife for Meitou - русский текст (ru). MACHINE-DRAFTED (machine-drafted by Claude for PZA, 2026-11-22):
+# not yet checked by a native speaker. Corrections are welcome and will be credited. Format: key = text (UTF-8).
+
+mod.name = PZA's Wildlife
+set.carrion = Птицы у падали
+set.carrion.hint = Птицы слетаются к трупам, садятся рядом и клюют, а когда кто-то подходит ближе 20 м, разом взлетают. Один готовый вариант, настраивать нечего.
+set.lang = Язык
+set.lang.hint = auto = язык игры. Нужен перезапуск игры.
+debug.toggle = Wildlife: птицы у падали вкл / выкл
