@@ -68,6 +68,14 @@ All patches are on Meitou's own bird code (`Meitou.Game.Effects`, drawing side o
 A taken bird is marked as circling an attractor, so the game's flocking leaves it alone, and it goes back to wandering when it is done.
 Every rule counts each time it fires, and the log shows the counts every few seconds.
 
+## Ideas and pull requests
+
+If anyone has ideas to expand on this please submit PRs. There is a lot more to explore here.
+
+Where to start: the rules (who takes which bird, landing, pecking, fleeing) are in `mod/src/WildCore.cs` with every number in one
+`Preset`; the folded-wing model is `mod/src/BirdFold.cs`. A new rule comes with a case in `mod/tools/check`, a fuzz invariant in
+`tests/fuzz/Program.cs` and a planted bug in `tests/fuzz/mutants.txt`.
+
 ## Licence
 
 GPLv3 or later (`LICENSE`). Author: PZA. Unofficial fan-made mod; not affiliated with Lo-Fi Games or the Meitou project. See `NOTICE.md`.
