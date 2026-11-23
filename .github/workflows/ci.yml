@@ -1,0 +1,77 @@
+# PZA's Wildlife for Meitou: CI (author PZA, GPLv3 or later). Builds the mod against Meitou 0.20.1 (the oldest it supports), runs the offline
+# check and the fuzzer there and again on Meitou 0.22.1 (the same build, as players run it), then "Release readiness" requires both.
+# The Meitou releases come from VlcekM/MeitouClient's own release assets; PZA's Meitou UI (string table + fuzz kit) from the org.
+# No Kenshi install on the runner: the check's fold on the game's own bird mesh is skipped there (PZA_NO_KENSHI=1); the rest runs.
+name: CI
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    name: Build, check and fuzz (${{ matrix.run-on }})
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        run-on: ["0.20.1", "0.22.1"]
+    env:
+      PZA_NO_KENSHI: "1"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          path: PZAMeitouWildlife
+          persist-credentials: false
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: Meitou-Modding-Ecosystem/PZAMeitouUi
+          ref: master
+          path: PZAMeitouUi
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 11.0.x
+      - name: Download Meitou ${{ matrix.run-on }} and 0.20.1 (win-x64)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $dl = Join-Path $env:RUNNER_TEMP "dl"; $bin = Join-Path $env:RUNNER_TEMP "meitou"
+          foreach ($v in @("0.20.1", "${{ matrix.run-on }}") | Select-Object -Unique) {
+            gh release download "v$v" -R VlcekM/MeitouClient -p "Meitou-$v-win-x64.zip" -D $dl
+            if ($LASTEXITCODE -ne 0) { throw "download of Meitou $v failed" }
+            Expand-Archive (Join-Path $dl "Meitou-$v-win-x64.zip") -DestinationPath (Join-Path $bin $v)
+          }
+          $props = "<Project><PropertyGroup><MeitouDir>$bin\0.20.1\Meitou-0.20.1-win-x64</MeitouDir></PropertyGroup></Project>"
+          Set-Content -Path PZAMeitouWildlife\mod\local.props -Value $props -Encoding ascii
+      - name: Build against 0.20.1, check and fuzz on ${{ matrix.run-on }}
+        shell: pwsh
+        run: |
+          $runOn = Join-Path $env:RUNNER_TEMP "meitou\${{ matrix.run-on }}\Meitou-${{ matrix.run-on }}-win-x64"
+          & PZAMeitouWildlife\mod\build.ps1 -Check -RunOn $runOn
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  release-readiness:
+    name: Release readiness
+    if: always()
+    needs: [check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require all prerequisite checks
+        env:
+          RESULTS: ${{ join(needs.*.result, ',') }}
+        run: |
+          python - <<'PYCODE'
+          import os
+          results = os.environ['RESULTS'].split(',')
+          if not results or any(result != 'success' for result in results):
+              raise SystemExit('A required check failed, was cancelled, or was skipped')
+          PYCODE

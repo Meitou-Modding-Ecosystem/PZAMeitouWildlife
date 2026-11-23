@@ -326,11 +326,16 @@ static class P
             "unmarked, empty and out-of-range levels are not folds");
 
         string mesh = Path.Combine(kenshi, "data", "meshes", "birdtype1.mesh");
-        if (!File.Exists(mesh))
-        {
-            Expect(false, "the game's birdtype1.mesh is there to fold: " + mesh);
-            return;
-        }
+        if (!File.Exists(mesh) && Environment.GetEnvironmentVariable("PZA_NO_KENSHI") == "1")
+            Console.WriteLine("skip the fold on the game's own mesh: no Kenshi install here (CI); the rest runs");
+        else if (!File.Exists(mesh)) Expect(false, "the game's birdtype1.mesh is there to fold: " + mesh);
+        else FoldRealMesh(mesh);
+        LoadHook();
+    }
+
+    /// <summary>The fold on the installed birdtype1.mesh (read only): sizes, every vertex finite, none lost.</summary>
+    static void FoldRealMesh(string mesh)
+    {
         var before = Meitou.Data.Ogre.OgreMeshReader.ReadFile(mesh);
         var a = Bounds(before);
         foreach (var level in new[] { BirdFold.Half, BirdFold.Full })
@@ -344,7 +349,11 @@ static class P
                 Expect(b.Size.X <= 10 && b.Size.Z <= 22 && b.Size.Y <= a.Size.Y, $"fold {level}: a perched bird's size (wingspan {a.Size.X:0} -> {b.Size.X:0.0} units)");
             else Expect(b.Size.X < a.Size.X && b.Size.X > 10, $"fold {level}: half open ({b.Size.X:0.0} units across)");
         }
+    }
 
+    /// <summary>The DebrisRenderer.Load hook on an uninitialised renderer (no GPU).</summary>
+    static void LoadHook()
+    {
         // the Load hook: a marked name never reaches the game's own loader (which would look for a file by that name and draw nothing)
         var renderer = (Meitou.Game.Rendering.Objects.DebrisRenderer)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Meitou.Game.Rendering.Objects.DebrisRenderer));
         var meshesField = typeof(Meitou.Game.Rendering.Objects.DebrisRenderer).GetField("_meshes", BindingFlags.NonPublic | BindingFlags.Instance)!;
