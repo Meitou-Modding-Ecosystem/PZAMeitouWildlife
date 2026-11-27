@@ -22,6 +22,8 @@ CLIPS = {                          # name: (beats a second, frames, bend, wave n
     'run': (2.4, 16, 0.25, 0.72, 1.035, 0.72, 1.6),
 }
 HEAD_HOLD, TRUNK = 0.85, 0.9
+# the colours shipped: the wild one and the six tropical (the user left the pastels out, 2026-11-27); FroxPreset.Colours matches
+COLOURS = ['original', 'parrot', 'sunset', 'lagoon', 'poison-dart', 'mango', 'hibiscus']
 FRONT = ['Bone_006', 'Bone_005', 'Bone_004', 'Bone_015', 'Bone_014']                 # mid-body to the head
 REAR = ['Bone_003', 'Bone_002', 'Bone_013', 'Bone_012', 'Bone_011', 'Bone_023', 'Bone_022', 'Bone_042', 'Bone_041']   # to the tail tip
 TAIL_CURL = ('Bone_011', 'Bone_023', 'Bone_022', 'Bone_042', 'Bone_041')            # where the rest pose's curl is undone
@@ -140,7 +142,7 @@ def main():
 
     from PIL import Image
     for f in sorted(os.listdir(a.textures)):
-        if not f.endswith('.png') or 'mask' in f: continue
+        if not f.endswith('.png') or f[:-4] not in COLOURS: continue
         Image.open(os.path.join(a.textures, f)).convert('RGBA').resize((512, 512), Image.LANCZOS).save(os.path.join(a.out, 'textures', f), optimize=True)
     print('textures:', len([f for f in os.listdir(os.path.join(a.out, 'textures'))]))
 

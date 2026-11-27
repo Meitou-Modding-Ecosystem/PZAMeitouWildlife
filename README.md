@@ -14,9 +14,9 @@ saves, so you can add or remove the mod at any time.
 
 *Headless Meitou 0.22.1, no post-processing. Top: sped up. Bottom: real time.*
 
-![The thirteen froxlotl colours](media/froxlotl-colours.png)
+![The seven froxlotl colours](media/froxlotl-colours.png)
 
-*The froxlotl's thirteen colours (TheIvoryDisaster's model and textures), drawn from the mod's own bake.*
+*The froxlotl's seven colours in the game (TheIvoryDisaster's model and textures), drawn from the mod's own bake.*
 
 ## Thanks
 
@@ -50,8 +50,7 @@ saves, so you can add or remove the mod at any time.
   ![The frog: the Gorillo at frog size in a matte lizard skin](media/frog.png)
 - **Froxlotls.** Froxlotls (45 to 63 cm) rest at the water's edges, more at night, and crawl about now and then. Come within about 7 m
   and they turn and dash into the water with a salamander wiggle, slip under with a splash, and come back later. Each visit to the
-  Swamp brings four of the thirteen colours: the wild brown one and three of Strawberry Milk, Lavender, Mint, Baby Blue, Buttercream,
-  Peach Sorbet, Parrot, Sunset, Lagoon, Poison Dart, Mango and Hibiscus.
+  Swamp brings four of the seven colours: the wild brown one and three of Parrot, Sunset, Lagoon, Poison Dart, Mango and Hibiscus.
 
 ### Settings
 

@@ -27,8 +27,8 @@ public static class FroxPreset
     /// <summary>The colours worn at once (from Colours: the wild one and PoolSize - 1 picked at random).</summary>
     public const int PoolSize = 4;
     public const int SplashQueue = 16;
-    public static readonly string[] Colours = ["original", "baby-blue", "buttercream", "hibiscus", "lagoon", "lavender", "mango", "mint", "parrot",
-                                               "peach-sorbet", "poison-dart", "strawberry-milk", "sunset"];
+    /// <summary>The wild colour and Mazal's six tropical ones (his six pastels left out, user 2026-11-27: "not a fan of the pastel colors").</summary>
+    public static readonly string[] Colours = ["original", "parrot", "sunset", "lagoon", "poison-dart", "mango", "hibiscus"];
 }
 
 /// <summary>The baked clips' timing and ground speeds (FroxAsset), with defaults that match the shipped bake for the check.</summary>
