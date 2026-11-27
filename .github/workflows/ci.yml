@@ -1,0 +1,97 @@
+name: CI
+'on':
+  pull_request:
+    branches:
+    - beta
+    - main
+    - release
+  push:
+    branches:
+    - beta
+    - main
+    - release
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        path: PZAMeitouWildlife
+        persist-credentials: false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        repository: Meitou-Modding-Ecosystem/PZAMeitouUi
+        ref: bfe03701a0e3cc386b07928669f2a15d4b48d98e
+        path: PZAMeitouUi
+        persist-credentials: false
+    - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+      with:
+        dotnet-version: 11.0.x
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: '3.12'
+    - name: Fetch verified documented engine reference
+      shell: pwsh
+      run: '$ErrorActionPreference = ''Stop''
+
+        $zip = Join-Path $env:RUNNER_TEMP ''engine.zip''
+
+        Invoke-WebRequest ''https://github.com/VlcekM/MeitouClient/releases/download/v0.22.1/Meitou-0.22.1-win-x64.zip'' -OutFile
+        $zip
+
+        if ((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne ''e9d1c41330d0859902b35db450209f86a5cf5093c846545153c3eb131161375f'')
+        { throw ''Engine checksum mismatch'' }
+
+        $out = Join-Path $env:RUNNER_TEMP ''engine''
+
+        Expand-Archive $zip -DestinationPath $out
+
+        $dll = @(Get-ChildItem $out -Recurse -Filter MeitouClient.dll)
+
+        if ($dll.Count -ne 1) { throw ''Expected one engine assembly'' }
+
+        "MEITOU_DIR=$($dll[0].DirectoryName)" >> $env:GITHUB_ENV
+
+        '
+    - name: Run documented build and available offline checks
+      shell: pwsh
+      working-directory: PZAMeitouWildlife
+      run: './mod/build.ps1 -MeitouDir $env:MEITOU_DIR
+
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+        '
+  development-readiness:
+    name: Development readiness
+    if: always()
+    needs:
+    - build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - name: Require prerequisite checks
+      env:
+        RESULTS: ${{ toJSON(needs) }}
+        TARGET: ${{ github.base_ref || github.ref_name }}
+      run: "python - <<'PYCODE'\nimport json, os\nresults = json.loads(os.environ['RESULTS'])\nrequired = list(results)\n\
+        if not required or any(results[key]['result'] != 'success' for key in required):\n    raise SystemExit('A prerequisite\
+        \ failed, was cancelled, or was skipped')\nPYCODE\n"
+  release-readiness:
+    name: Release readiness
+    if: always()
+    needs:
+    - development-readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - name: Require prerequisite checks
+      env:
+        RESULTS: ${{ toJSON(needs) }}
+        TARGET: ${{ github.base_ref || github.ref_name }}
+      run: "python - <<'PYCODE'\nimport json, os\nresults = json.loads(os.environ['RESULTS'])\ntarget = os.environ['TARGET']\n\
+        required = list(results) if target == 'release' else ['development-readiness']\nif not required or any(results[key]['result']\
+        \ != 'success' for key in required):\n    raise SystemExit('A prerequisite failed, was cancelled, or was skipped')\n\
+        PYCODE\n"
