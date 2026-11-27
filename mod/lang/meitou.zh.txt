@@ -3,7 +3,17 @@
 
 mod.name = PZA's Wildlife
 set.carrion = 食腐鸟
-set.carrion.hint = 鸟会飞向尸体，落在旁边啄食；有人走到约 20 米内时会一齐飞起。一套现成的效果，无需调整。
+set.carrion.hint = 鸟会飞向尸体，落在旁边啄食；有人走到约 20 米内时会一齐飞起。鸟在飞行、降落和起飞时也会扇动翅膀。一套现成的效果，无需调整。
 set.lang = 语言
 set.lang.hint = auto = 游戏的语言。需要重启游戏。
 debug.toggle = Wildlife：食腐鸟 开 / 关
+set.blood = 啄食时溅血
+set.blood.hint = 鸟啄食尸体时在该处溅起少量血雾。仅为显示效果，不会保存。需要 Meitou 0.22.2-nightly.20261123 或更新版本。
+set.fireflies = 沼泽萤火虫
+set.fireflies.hint = 黄昏至黎明期间，温暖发光的萤火虫会在沼泽上空飘浮。纯视觉效果，不会写入存档。
+set.night = 夜晚声音
+set.night.hint = 夜晚环境音（沼泽的蛙鸣与虫鸣、峡谷的蟋蟀）从黄昏开始，而不是 23:00，叫声也稍大一些。仅为声音，不会保存。
+set.frogs = 沼泽青蛙
+set.frogs.hint = 青蛙蹲在沼泽的水边，夜里更多；有人走到约 7 米内时会扑通跳进水里。仅为显示效果，不会保存。
+set.frox = 蛙螈
+set.frox.hint = 蛙螈以几种鲜艳的颜色趴在沼泽的水边，夜里更多；偶尔爬动，有人走到约 7 米内时会跑进水里。模型与配色：TheIvoryDisaster。仅为显示效果，不会保存。

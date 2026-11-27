@@ -12,17 +12,20 @@ public sealed class WildlifeMod : IMod
     public void Initialize(ModContext context)
     {
         Log.Sink = context.Log;
+        FroxMesh.Folder = context.Folder;
         context.AddSettings(Driver.Settings);   // saved values are applied before this returns
 
         string version = typeof(WildlifeMod).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "?";
         int plus = version.IndexOf('+');
         if (plus >= 0) version = version[..plus];
         Log.Line($"{version} for Meitou, by PZA: birds at carrion {(Driver.Settings.Carrion ? "ON" : "off")} (preset Carrion: pull "
-                 + $"{Preset.FreshPull / 10:0} m fresh / {Preset.OldPull / 10:0} m old, up to {Preset.FreshCap} birds a corpse, flee within {Preset.FleeRadius / 10:0} m)");
+                 + $"{Preset.FreshPull / 10:0} m fresh / {Preset.OldPull / 10:0} m old, up to {Preset.FreshCap} birds a corpse, flee within {Preset.FleeRadius / 10:0} m); "
+                 + $"swamp fireflies {(Driver.Settings.Fireflies ? "ON" : "off")}");
         foreach (var line in Strings.Text.Init(context.Folder, Loc.Language?.Code ?? "en", Driver.Settings.Language, "lang/meitou.{code}.txt"))
             Log.Line(line);
 
         if (!Start(context.Harmony)) return;
+        Log.Line(BiteEffects.Setup(context));
         context.AddDebugCommand(Strings.T("debug.toggle"), _ =>
         {
             Driver.Settings.Carrion = !Driver.Settings.Carrion;

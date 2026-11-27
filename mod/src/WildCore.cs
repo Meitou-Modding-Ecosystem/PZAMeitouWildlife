@@ -38,8 +38,27 @@ public static class Preset
     public const float EyeReach = 25000;
     /// <summary>A landed bird's origin sits this many mesh units over the ground times its scale (the mesh is drawn by its origin, #409).</summary>
     public const float LiftPerScale = 2.0f;
+    /// <summary>Bites (display only): the chance a head dip tears at the body, the most waiting at once, and how far ahead of the bird's
+    /// origin its beak is (mesh units times its scale; birdtype1's head is at +7).</summary>
+    public const float BiteChance = 0.6f, BeakReach = 6;
+    public const int BiteQueue = 24;
     /// <summary>Pecking: head dip (rad), hop length and height (units), turn (rad).</summary>
     public const float DipAngle = 0.45f, HopMin = 1.5f, HopMax = 5, HopHeight = 3, HopSeconds = 0.45f, TurnMin = 0.35f, TurnMax = 1.4f;
+}
+
+/// <summary>The wing timing (0.7.0): beat rates (beats a second), the high circle's bursts, where the way in starts braking (part of the approach) and
+/// how long before touch-down it folds (s, at most 45% of the approach), how far it is folded at touch-down, and how long the fold settles on the ground and opens at a take-off (s).</summary>
+public static class WingPreset
+{
+    public const float BurstEvery = 6, BurstSeconds = 1.2f, BurstHz = 2.6f, BrakeHz = 4.2f, ClimbHz = 3.6f;
+    public const float BrakeFrom = 0.55f, TouchSeconds = 0.3f, TouchFold = 0.5f, Settle = 0.35f, Unfold = 0.3f;
+
+    /// <summary>Smoothstep on 0..1 (clamped; NaN = 0).</summary>
+    public static float Smooth(float t)
+    {
+        t = float.IsFinite(t) ? Math.Clamp(t, 0, 1) : 0;
+        return t * t * (3 - 2 * t);
+    }
 }
 
 /// <summary>A corpse as the rules see it: a key, where it lies, its age in game seconds and whether it is old (flies).</summary>
@@ -72,25 +91,62 @@ public sealed class WildBird
     public Vector3 FleeDir;
     public bool Scared;
 
-    /// <summary>How folded the wings are drawn (BirdFold levels): 100 on the ground, 50 for a hop's wing flick, the last of the glide in and
-    /// the first moment of a take-off, 0 in flight.</summary>
-    public int FoldLevel => Phase switch
+    /// <summary>How the wings are drawn (a BirdFold pose; 0.7.0, smooth): beats in bursts while it circles high, glides down the spiral,
+    /// beats to brake on the way in and folds as it touches down (the fold finishes on the ground), a hop's wing flick opens and closes them,
+    /// and a take-off opens them and beats hard while it climbs away.</summary>
+    public int WingPose => Phase switch
     {
-        Phase.Peck => Action == 2 && ActionClock > 0.08f && ActionClock < Preset.HopSeconds - 0.08f ? BirdFold.Half : BirdFold.Full,
-        Phase.Approach => Length > 0 && Clock / Length >= 0.92f ? BirdFold.Full : Length > 0 && Clock / Length >= 0.7f ? BirdFold.Half : 0,
-        Phase.Flee => Clock < Delay ? BirdFold.Full : Clock < Delay + 0.15f ? BirdFold.Half : 0,
+        Phase.Gather => Clock % WingPreset.BurstEvery < WingPreset.BurstSeconds ? BirdFold.FlapAt(Clock % WingPreset.BurstEvery, WingPreset.BurstHz) : 0,
+        Phase.Approach => ApproachPose(),
+        Phase.Peck => PeckPose(),
+        Phase.Flee => Clock < Delay ? BirdFold.Full
+            : Clock < Delay + WingPreset.Unfold ? BirdFold.Level(1 - WingPreset.Smooth((Clock - Delay) / WingPreset.Unfold))
+            : BirdFold.FlapAt(Clock - Delay - WingPreset.Unfold, WingPreset.ClimbHz),
         _ => 0,
     };
+
+    /// <summary>Kept for older callers: the fold level of the pose (0 while beating).</summary>
+    public int FoldLevel => WingPose is var p && p <= 100 ? p : 0;
+
+    int ApproachPose()
+    {
+        if (!(Length > 0)) return 0;
+        float fold = Math.Min(WingPreset.TouchSeconds, 0.45f * Length), folding = Length - fold;
+        if (Clock < WingPreset.BrakeFrom * Length) return 0;
+        if (Clock < folding) return BirdFold.FlapAt(Clock - WingPreset.BrakeFrom * Length, WingPreset.BrakeHz);
+        return BirdFold.Level(WingPreset.TouchFold * WingPreset.Smooth((Clock - folding) / fold));
+    }
+
+    int PeckPose()
+    {
+        if (Clock < WingPreset.Settle)
+            return BirdFold.Level(WingPreset.TouchFold + (1 - WingPreset.TouchFold) * WingPreset.Smooth(Clock / WingPreset.Settle));
+        if (Action == 2)
+        {
+            float u = Math.Clamp(ActionClock / Preset.HopSeconds, 0, 1);
+            return BirdFold.Level(1 - 0.5f * MathF.Sin(MathF.PI * u));
+        }
+        return BirdFold.Full;
+    }
 }
 
 public sealed class WildCore
 {
     /// <summary>The terrain's height at a world x, z (the game's bird step gives its own).</summary>
     public Func<float, float, float> Ground = (_, _) => 0;
+    /// <summary>Water surface height (world units; NegativeInfinity = disabled in unit tests, 100 in Kenshi/Meitou).</summary>
+    public float WaterLevel { get; set; } = float.NegativeInfinity;
     /// <summary>Counts a rule each time it fires (the mod's 5 s counter line).</summary>
     public Action<string> Count = _ => { };
     /// <summary>Real seconds the rules have run.</summary>
     public float Now { get; private set; }
+
+    float Surface(float x, float z)
+    {
+        float g = Ground(x, z);
+        if (!float.IsFinite(g)) return float.IsFinite(WaterLevel) ? WaterLevel : g;
+        return float.IsFinite(WaterLevel) && g < WaterLevel ? WaterLevel : g;
+    }
 
     readonly Random _random;
     readonly Dictionary<long, Corpse> _corpses = [];
@@ -108,6 +164,42 @@ public sealed class WildCore
     public int TakenBy(long corpse) => _taken.GetValueOrDefault(corpse);
     public bool TryGet(object handle, out WildBird bird) => _held.TryGetValue(handle, out bird!);
     public int CorpseCount => _corpses.Count;
+
+    /// <summary>Where birds bit at a body since the last <see cref="TakeBites"/> (display-only bursts), at most
+    /// <see cref="Preset.BiteQueue"/>; locked, as the host thread takes them while the bird thread adds.</summary>
+    readonly List<Vector3> _bites = [];
+    public bool Bites = true;
+
+    public List<Vector3> TakeBites()
+    {
+        lock (_bites)
+        {
+            var taken = new List<Vector3>(_bites);
+            _bites.Clear();
+            return taken;
+        }
+    }
+
+    void Bite(WildBird b)
+    {
+        if (!Bites || _random.NextDouble() >= Preset.BiteChance) return;
+        float reach = Preset.BeakReach * b.Scale;
+        var toBody = Flat(b.Centre - b.Spot);
+        float dist = toBody.Length();
+        var at = dist > 1e-3f ? b.Spot + toBody / dist * Math.Min(reach, dist) : b.Spot;   // between the beak and the body
+        at.Y = Ground(at.X, at.Z) + 0.5f * b.Scale;
+        if (!Finite(at)) return;
+        lock (_bites)
+        {
+            if (_bites.Count >= Preset.BiteQueue)
+            {
+                Count("bite.dropped");
+                return;
+            }
+            _bites.Add(at);
+        }
+        Count("bite");
+    }
 
     #region The world
 
@@ -176,6 +268,10 @@ public sealed class WildCore
         foreach (var c in _corpses.Values)
         {
             if (_taken.GetValueOrDefault(c.Key) >= Cap(c)) continue;
+            // Skip corpses submerged underwater or high above terrain (e.g. upper building floors / roofs).
+            if (float.IsFinite(WaterLevel) && c.Position.Y < WaterLevel - 1f) continue;
+            float groundY = Ground(c.Position.X, c.Position.Z);
+            if (float.IsFinite(groundY) && c.Position.Y > groundY + 18f) continue;
             float pull = Pull(c), d2 = Flat(c.Position - position).LengthSquared();
             float s = pull * pull / Math.Max(d2, 1);
             if (s > score) (best, score) = (c, s);
@@ -201,6 +297,17 @@ public sealed class WildCore
         _taken[corpse.Key] = _taken.GetValueOrDefault(corpse.Key) + 1;
         Count(corpse.Old || Freshness(corpse) < 0.5f ? "claim.old" : "claim.fresh");
         return b;
+    }
+
+    /// <summary>Clears all held birds, corpses, cooldowns and queued bites (called on world switch / save load).</summary>
+    public void Reset()
+    {
+        _held.Clear();
+        _taken.Clear();
+        _cooldown.Clear();
+        _corpses.Clear();
+        _threats.Clear();
+        lock (_bites) _bites.Clear();
     }
 
     /// <summary>Lets every held bird go (the switch turned off); returns them so the game's birds get their place back.</summary>
@@ -305,7 +412,7 @@ public sealed class WildCore
             (b.Position, b.Forward) = (keepP, keepF);
             b.Phase = Phase.Done;
         }
-        float g = Ground(b.Position.X, b.Position.Z);
+        float g = Surface(b.Position.X, b.Position.Z);
         if (float.IsFinite(g) && b.Position.Y < g) b.Position.Y = g;
         b.Forward = Unit(b.Forward, Vector3.UnitZ);
     }
@@ -330,7 +437,7 @@ public sealed class WildCore
     {
         b.Phase = Phase.Done;
         if (!Finite(b.Position)) b.Position = b.Centre;
-        float g = Ground(b.Position.X, b.Position.Z);
+        float g = Surface(b.Position.X, b.Position.Z);
         if (float.IsFinite(g) && b.Position.Y < g) b.Position.Y = g;
         var f = Unit(b.Forward, Vector3.UnitZ);
         if (f.Y < -0.2f) f = Unit(new Vector3(f.X, 0.2f, f.Z), Vector3.UnitZ);
@@ -437,11 +544,13 @@ public sealed class WildCore
         b.Clock = 0;
         b.Length = Range(Preset.StayMin, Preset.StayMax);
         b.Yaw = MathF.Atan2(b.Forward.X, b.Forward.Z);
-        b.Pitch = 0;
-        b.Action = 0;
-        b.ActionClock = 0;
-        b.NextAction = Range(0.4f, 1.2f);
         b.Spot = new Vector3(flat.X, 0, flat.Z);
+        b.Pitch = 0;
+        b.Action = 3;   // first turn to face the body (smoothly), then peck at it
+        b.ActionClock = 0;
+        b.TurnFrom = b.Yaw;
+        b.TurnTo = b.Yaw + Wrap(FaceYaw(b) - b.Yaw);
+        b.NextAction = Range(0.4f, 1.2f);
         Count("land");
     }
 
@@ -480,7 +589,7 @@ public sealed class WildCore
                 break;
         }
 
-        b.Position = new Vector3(b.Spot.X, Ground(b.Spot.X, b.Spot.Z) + Lift(b) + bump, b.Spot.Z);
+        b.Position = new Vector3(b.Spot.X, Surface(b.Spot.X, b.Spot.Z) + Lift(b) + bump, b.Spot.Z);
         float cp = MathF.Cos(b.Pitch);
         b.Forward = new Vector3(MathF.Sin(b.Yaw) * cp, MathF.Sin(b.Pitch), MathF.Cos(b.Yaw) * cp);
     }
@@ -493,12 +602,14 @@ public sealed class WildCore
         {
             b.Action = 1;
             Count("peck.dip");
+            Bite(b);
         }
         else if (roll < 0.8)
         {
             b.Action = 3;
             b.TurnFrom = b.Yaw;
-            b.TurnTo = b.Yaw + (_random.Next(2) == 0 ? 1 : -1) * Range(Preset.TurnMin, Preset.TurnMax);
+            float look = Wrap(FaceYaw(b) + (_random.Next(2) == 0 ? 1 : -1) * Range(0, Preset.TurnMax * 0.6f) - b.Yaw);   // around the body
+            b.TurnTo = b.Yaw + (MathF.Abs(look) < Preset.TurnMin ? MathF.CopySign(Preset.TurnMin, look) : look);
             Count("peck.turn");
         }
         else
@@ -559,6 +670,21 @@ public sealed class WildCore
     #region Maths
 
     static float Lift(WildBird b) => Preset.LiftPerScale * b.Scale;
+
+    /// <summary>The yaw that faces the body from the landing spot (the current yaw when on top of it).</summary>
+    static float FaceYaw(WildBird b)
+    {
+        var d = Flat(b.Centre - b.Spot);
+        return d.LengthSquared() > 1e-6f ? MathF.Atan2(d.X, d.Z) : b.Yaw;
+    }
+
+    /// <summary>An angle wrapped to -pi..pi (the short way round).</summary>
+    static float Wrap(float a)
+    {
+        if (!float.IsFinite(a)) return 0;
+        a %= MathF.Tau;
+        return a > MathF.PI ? a - MathF.Tau : a < -MathF.PI ? a + MathF.Tau : a;
+    }
 
     /// <summary>Turns a unit heading towards <paramref name="want"/> by at most <paramref name="maxAngle"/> radians.</summary>
     public static Vector3 Turn(Vector3 from, Vector3 want, float maxAngle)

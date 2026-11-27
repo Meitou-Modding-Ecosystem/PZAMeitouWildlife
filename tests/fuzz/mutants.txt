@@ -85,3 +85,153 @@
 ===
         if (stop == end || stop - end > 3 || !int.TryParse(name.AsSpan(end, stop - end), out level)) return false;
 >>>
+
+@@ WL-bite-cap | PZAMeitouWildlife\mod\src\WildCore.cs | core.flight | the bite queue has no cap (bursts pile up while particles are off)
+<<<
+            if (_bites.Count >= Preset.BiteQueue)
+===
+            if (_bites.Count >= Preset.BiteQueue * 100)
+>>>
+
+@@ WL-ff-ground | PZAMeitouWildlife\mod\src\FireflyCore.cs | fireflies | firefly ground floor left out (motes can sink underground)
+<<<
+                    float ny = Math.Max(g + 1f, g + f.HeightOffset + bob);
+===
+                    float ny = g - 5f;
+>>>
+
+@@ WL-ff-day | PZAMeitouWildlife\mod\src\FireflyCore.cs | fireflies | fireflies ignore daytime and spawn at noon
+<<<
+        if (h >= dusk1 || h <= dawn0) return 1f;
+===
+        if (h >= 0.0) return 1f;
+>>>
+
+@@ WL-ff-rain | PZAMeitouWildlife\mod\src\FireflyCore.cs | fireflies | fireflies ignore heavy rainstorms
+<<<
+        float.IsFinite(rain) ? FireflyPreset.RainFloor + (1f - FireflyPreset.RainFloor) * (1f - Smooth((rain - FireflyPreset.RainFadeStart) / (FireflyPreset.RainFadeEnd - FireflyPreset.RainFadeStart))) : 1f;
+===
+        1f;
+>>>
+
+@@ WL-ff-water | PZAMeitouWildlife\mod\src\FireflyCore.cs | fireflies | fireflies ignore water surface and sink under swamp water
+<<<
+        if (float.IsFinite(WaterLevel) && y < WaterLevel) y = WaterLevel;
+===
+        // water floor removed
+>>>
+
+@@ WL-ff-near | PZAMeitouWildlife\mod\src\FireflyCore.cs | fireflies | near-camera fade left out (fireflies pop huge across lens)
+<<<
+        float.IsFinite(dist) ? Smooth((dist - FireflyPreset.NearFadeStart) / (FireflyPreset.NearFadeEnd - FireflyPreset.NearFadeStart)) : 0f;
+===
+        1f;
+>>>
+
+@@ WL-blink-guard | PZAMeitouWildlife\mod\src\FireflyCore.cs | firefly.blink | a zero or NaN period reaches the blink maths
+<<<
+        if (!float.IsFinite(time) || !float.IsFinite(period) || period <= 0 || !float.IsFinite(phase)) return FireflyPreset.Ember;
+===
+        if (!float.IsFinite(time)) return FireflyPreset.Ember;
+>>>
+
+@@ WL-ff-rain-dim | PZAMeitouWildlife\mod\src\FireflyCore.cs | * | rain dims every fly instead of thinning them (no flash in swamp rain)
+<<<
+                float pulse = Blink(_time, f.Period, f.Phase) * night;
+===
+                float pulse = Blink(_time, f.Period, f.Phase) * factor;
+>>>
+
+@@ WL-night-lift | PZAMeitouWildlife\mod\src\NightSounds.cs | night.sounds | the lift clamps loud calls down to the floor (quieter, not louder)
+<<<
+        float.IsFinite(rolled) ? Math.Max(rolled, NightSoundsPreset.CallFloor) + NightSoundsPreset.Lift : rolled;
+===
+        float.IsFinite(rolled) ? Math.Min(rolled, NightSoundsPreset.CallFloor) + NightSoundsPreset.Lift : rolled;
+>>>
+
+@@ WL-night-later | PZAMeitouWildlife\mod\src\NightSounds.cs | night.sounds | the audio's sunset can move later than the game's
+<<<
+        double dusk = Math.Min(gameSunset, NightSoundsPreset.Dusk);
+===
+        double dusk = NightSoundsPreset.Dusk;
+>>>
+
+@@ WL-frog-flee | PZAMeitouWildlife\mod\src\FrogCore.cs | frogs | a sitting frog never notices people
+<<<
+                if (Near(f.Pos, people, FrogPreset.FleeRadius))
+===
+                if (false && Near(f.Pos, people, FrogPreset.FleeRadius))
+>>>
+
+@@ WL-frog-splash | PZAMeitouWildlife\mod\src\FrogCore.cs | frogs | the splash queue has no cap
+<<<
+            if (_splashes.Count < FrogPreset.SplashQueue) _splashes.Add(f.To);
+            else Count?.Invoke("frogs.splash_dropped");
+===
+            _splashes.Add(f.To);
+>>>
+
+@@ WL-flap-clamp | PZAMeitouWildlife\mod\src\BirdFold.cs | wings | the beat's angle not clamped (a wing can swing through the body)
+<<<
+        angle = Math.Clamp(float.IsFinite(angle) ? angle : 0, -MaxAngle, MaxAngle);
+===
+        angle = float.IsFinite(angle) ? angle : 0;
+>>>
+
+@@ WL-fold-steps | PZAMeitouWildlife\mod\src\BirdFold.cs | wings | a fold level is not clamped to 100 (an amount over 1 asks for a mesh that is never made)
+<<<
+        int level = (int)MathF.Round(Math.Min(amount, 1) * 100 / FoldStep) * FoldStep;
+        return Math.Clamp(level, 0, 100);
+===
+        int level = (int)MathF.Round(amount * 100 / FoldStep) * FoldStep;
+        return Math.Max(level, 0);
+>>>
+
+@@ WL-wing-settle | PZAMeitouWildlife\mod\src\WildCore.cs | wings | the fold snaps shut at touch-down (no settle on the ground)
+<<<
+        if (Clock < WingPreset.Settle)
+===
+        if (false && Clock < WingPreset.Settle)
+>>>
+
+@@ WL-frog-pose | PZAMeitouWildlife\mod\src\FrogCore.cs | wings | a frog's stretch is not clamped (a pose past the last is asked for)
+<<<
+        float.IsFinite(stretch) ? Math.Clamp((int)MathF.Round(Math.Clamp(stretch, 0, 1) * (Poses - 1)), 0, Poses - 1) : 0;
+===
+        float.IsFinite(stretch) ? (int)MathF.Round(stretch * (Poses - 1)) : 0;
+>>>
+
+@@ WL-frox-speed | PZAMeitouWildlife\mod\src\FroxCore.cs | frox | a running froxlotl moves faster than its run's feet (they slide)
+<<<
+        float step = Clips.RunSpeed * FroxPreset.RunRate * f.Scale * dt;
+===
+        float step = Clips.RunSpeed * FroxPreset.RunRate * f.Scale * dt * 3;
+>>>
+
+@@ WL-frox-pool | PZAMeitouWildlife\mod\src\FroxCore.cs | frox | a froxlotl wears any colour, not one from the visit's pool
+<<<
+            f.Colour = _pool.Length > 0 ? _pool[_random.Next(_pool.Length)] : 0;
+===
+            f.Colour = _random.Next(FroxPreset.Colours.Length);
+>>>
+
+@@ WL-frox-index | PZAMeitouWildlife\mod\src\FroxMesh.cs | frox | the bake reader takes an index past the vertices
+<<<
+            if (a.Indices[i] >= a.Vertices) throw new InvalidDataException("index past the vertices");
+===
+            if (a.Indices[i] >= a.Vertices + 100000) throw new InvalidDataException("index past the vertices");
+>>>
+
+@@ WL-frog-anim | PZAMeitouWildlife\mod\src\FrogMesh.cs | frox | a frog animation frame past the clip's last
+<<<
+        int frame = float.IsFinite(u) ? Math.Clamp((int)(u * frames), 0, frames - 1) : 0;
+===
+        int frame = float.IsFinite(u) ? Math.Max((int)(u * frames), 0) : 0;
+>>>
+
+@@ WL-skin-gloss | PZAMeitouWildlife\mod\src\FrogSkin.cs | frox | the frog's skin keeps full gloss (the chrome look)
+<<<
+                outp[4 * i + 3] = (byte)Math.Round(Gloss + (EyeGloss - Gloss) * eye);
+===
+                outp[4 * i + 3] = 255;
+>>>

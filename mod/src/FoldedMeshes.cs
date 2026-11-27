@@ -15,34 +15,42 @@ namespace PZA.Wildlife.Meitou;
 
 public static class FoldedMeshes
 {
-    /// <summary>The fold level per bird id for this frame's draw, filled by the bird step (read between steps only).</summary>
+    /// <summary>The fold level per bird id for this frame's draw, filled by the bird step (locked for thread safety).</summary>
+    static readonly object s_lock = new();
     static readonly Dictionary<long, int> s_levels = [];
 
-    public static void BeginStep() => s_levels.Clear();
+    public static void BeginStep() { lock (s_lock) s_levels.Clear(); }
+    public static void Reset() { lock (s_lock) s_levels.Clear(); }
 
     public static void Note(long id, int level)
     {
-        if (level > 0) s_levels[id] = level;
+        if (level <= 0) return;
+        lock (s_lock) s_levels[id] = level;
     }
 
-    public static int LevelOf(long id) => s_levels.GetValueOrDefault(id);
+    public static int LevelOf(long id) { lock (s_lock) return s_levels.GetValueOrDefault(id); }
 
     #region The pieces
 
     /// <summary>The postfix's step: every piece of a landed bird gets the folded mesh, placed by the folded mesh's middle.</summary>
     public static void SwapPieces(List<DebrisPiece> pieces, int start, Func<string, Vector3?> centreOf)
     {
-        if (!Driver.On || s_levels.Count == 0) return;
+        if (!Driver.On) return;
+        lock (s_lock)
+        {
+            if (s_levels.Count == 0) return;
+        }
         for (int i = Math.Max(0, start); i < pieces.Count; i++)
         {
             var piece = pieces[i];
+            if (!BirdFold.CanFoldMesh(piece.Mesh)) continue;
             int level = LevelOf(piece.Id);
-            if (level <= 0 || centreOf(piece.Mesh) is not { } centre) continue;
-            string name = BirdFold.Name(piece.Mesh, level);
+            if (level <= 0 || !BirdFold.ValidPose(level) || centreOf(piece.Mesh) is not { } centre) continue;
+            string name = BirdFold.PoseName(piece.Mesh, level);
             if (centreOf(name) is not { } folded) continue;
             var origin = piece.Position - Vector3.Transform(centre * piece.Scale, piece.Rotation);
             pieces[i] = piece with { Mesh = name, Position = origin + Vector3.Transform(folded * piece.Scale, piece.Rotation) };
-            Counters.Add(level == BirdFold.Full ? "draw.folded" : "draw.half_folded");
+            Counters.Add(level == BirdFold.Full ? "draw.folded" : level > 100 ? "draw.flap" : "draw.part_folded");
         }
     }
 
@@ -83,8 +91,8 @@ public static class FoldedMeshes
 
         var ogre = OgreMeshReader.ReadFile(path);
         Weld(ogre);
-        int moved = FoldVertices(ogre, level / 100f);
-        Counters.Add("fold.made");
+        int moved = PoseVertices(ogre, level);
+        Counters.Add(level > 100 ? "flap.made" : "fold.made");
         if (moved == 0) return null;
         return Access.Build(renderer, file, ogre, diffuse);
     }
@@ -96,7 +104,13 @@ public static class FoldedMeshes
     }
 
     /// <summary>Folds every Float3 position of the mesh's vertex data in place; returns how many vertices moved.</summary>
-    public static int FoldVertices(OgreMesh ogre, float amount)
+    public static int FoldVertices(OgreMesh ogre, float amount) => MoveVertices(ogre, p => BirdFold.Fold(p, amount));
+
+    /// <summary>Puts the mesh in a wing pose (fold level or flap frame) in place; returns how many vertices moved.</summary>
+    public static int PoseVertices(OgreMesh ogre, int pose) => MoveVertices(ogre, p => BirdFold.Pose(p, pose));
+
+    /// <summary>Moves every Float3 position of the mesh's vertex data in place; returns how many vertices moved.</summary>
+    public static int MoveVertices(OgreMesh ogre, Func<Vector3, Vector3> move)
     {
         var done = new HashSet<OgreVertexData>(ReferenceEqualityComparer.Instance);
         int moved = 0;
@@ -111,7 +125,7 @@ public static class FoldedMeshes
                 int at = v * buffer.VertexSize + e.Offset;
                 if (at + 12 > bytes.Length) break;
                 var p = new Vector3(BitConverter.ToSingle(bytes[at..]), BitConverter.ToSingle(bytes[(at + 4)..]), BitConverter.ToSingle(bytes[(at + 8)..]));
-                var f = BirdFold.Fold(p, amount);
+                var f = move(p);
                 if (f == p) continue;
                 BitConverter.TryWriteBytes(bytes[at..], f.X);
                 BitConverter.TryWriteBytes(bytes[(at + 4)..], f.Y);
