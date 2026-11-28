@@ -309,6 +309,29 @@ public sealed class FrogCore
         if (u >= 1) GoAway(f, Range(FrogPreset.ReturnMin, FrogPreset.ReturnMax));
     }
 
+
+    /// <summary>A Mire Stilt's catch: the nearest one out within <paramref name="radius"/> of the point (flat) is gone, as if eaten (it comes
+    /// back later somewhere else, like one that dived); true when one was taken.</summary>
+    public bool Take(Vector3 at, float radius)
+    {
+        if (!WildCore.Finite(at) || !float.IsFinite(radius) || radius <= 0) return false;
+        lock (_lock)
+        {
+            Frog? best = null;
+            float bestD = radius * radius;
+            foreach (var f in _frogs)
+            {
+                if (f.State is FrogState.Away or FrogState.Dive) continue;
+                float d = Flat(f.Pos - at).LengthSquared();
+                if (d <= bestD) (best, bestD) = (f, d);
+            }
+            if (best is null) return false;
+            GoAway(best, Range(FrogPreset.ReturnMin, FrogPreset.ReturnMax));
+            Count?.Invoke("frogs.taken");
+            return true;
+        }
+    }
+
     void GoAway(Frog f, float seconds)
     {
         f.State = FrogState.Away;

@@ -13,6 +13,8 @@ public sealed class WildlifeMod : IMod
     {
         Log.Sink = context.Log;
         FroxMesh.Folder = context.Folder;
+        BirdRig.Folder = context.Folder;
+        StiltMesh.Folder = context.Folder;
         context.AddSettings(Driver.Settings);   // saved values are applied before this returns
 
         string version = typeof(WildlifeMod).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "?";

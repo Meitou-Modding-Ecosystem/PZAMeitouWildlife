@@ -21,6 +21,10 @@ public sealed class WildSettings
         }
     }
 
+    /// <summary>The game's own bird moved by Mesh2Motion's bird skeleton and clips (CC0); off = the bent wing poses.</summary>
+    [Setting(Strings.En.AnimatedLabel, Hint = Strings.En.AnimatedHint, VisibleWhen = nameof(Carrion))]
+    public bool AnimatedBirds { get; set; } = true;
+
     bool _blood = true;
 
     /// <summary>A small blood mist where a landed bird bites at the body (display only; needs Meitou's code-mod effects).</summary>
@@ -78,6 +82,20 @@ public sealed class WildSettings
         {
             _froxlotls = value;
             Driver.Frox.Enabled = value;
+        }
+    }
+
+    bool _stilts = true;
+
+    /// <summary>Mire Stilts (the user's own Meshy models on Mesh2Motion's bird rig) fly in, wade and hunt in the Swamp's shallows.</summary>
+    [Setting(Strings.En.StiltsLabel, Hint = Strings.En.StiltsHint)]
+    public bool Stilts
+    {
+        get => _stilts;
+        set
+        {
+            _stilts = value;
+            Driver.Stilts.Enabled = value;
         }
     }
 

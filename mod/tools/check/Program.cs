@@ -34,6 +34,7 @@ static class P
         Patching();
         Folding(a.Length > 1 ? a[1] : @"C:\Program Files (x86)\Steam\steamapps\common\Kenshi");
         Froxlotls(dir, a.Length > 1 ? a[1] : @"C:\Program Files (x86)\Steam\steamapps\common\Kenshi");
+        Stilts(dir);
         Flight();
         Console.WriteLine(s_bad == 0 ? "RESULT: PASS" : $"RESULT: FAIL ({s_bad})");
         return s_bad == 0 ? 0 : 1;
@@ -81,7 +82,7 @@ static class P
         try
         {
             var g = (Meitou.Modding.ModSettingsGroup)ctor.Invoke(new object[] { m.Id, "PZAWildlife", s });
-            Expect(g.Settings.Count == 7, "ModSettingsGroup accepts the settings: " + string.Join(", ", g.Settings.Select(x => $"{x.Key}={x.Text}")));
+            Expect(g.Settings.Count == 9, "ModSettingsGroup accepts the settings: " + string.Join(", ", g.Settings.Select(x => $"{x.Key}={x.Text}")));
             g.Settings.First(x => x.Key == "Carrion").Set(false);
             Expect(!Driver.On, "the page's switch turns the rules off (Driver.On)");
             g.Settings.First(x => x.Key == "Carrion").Set(true);
@@ -504,6 +505,55 @@ static class P
         var missing = FroxMesh.Textures.Missing(typeof(Meitou.Game.Rendering.Objects.DebrisRenderer));
         Expect(missing.Count == 0, "froxlotl colours: the renderer's texture members are there" + (missing.Count > 0 ? " (lacks " + string.Join(", ", missing) + ")" : ""));
 
+        // the birds' rig (0.11.0): Mesh2Motion's CC0 skeleton and clips on the game's own bird
+        var rig = BirdRig.Read(File.ReadAllBytes(Path.Combine(dir, "assets", "birdrig", "birdrig.pzab")));
+        Expect(rig.Bones.Length >= 15 && rig.Skin.Length >= 6 && rig.Skin.Take(6).All(c => c.Length >= 8)
+               && MathF.Abs(rig.Seconds[(int)RigClip.Glide] - RigPreset.GlideSeconds) < 0.02f && MathF.Abs(rig.Seconds[(int)RigClip.Idle] - RigPreset.IdleSeconds) < 0.02f
+               && MathF.Abs(rig.Seconds[(int)RigClip.TakeOff] - RigPreset.TakeOffSeconds) < 0.02f && File.Exists(Path.Combine(dir, "assets", "birdrig", "CREDITS.md")),
+            $"bird rig: {rig.Bones.Length} bones, {string.Join("/", rig.Skin.Take(6).Select(c => c.Length))} frames, clip lengths as RigPreset; credit shipped");
+        var probes = new[] { new Vector3(0, 0, 3), new Vector3(1.5f, 0.3f, -1), new Vector3(12, 1.5f, 0), new Vector3(-25, 7, 3), new Vector3(float.NaN, 0, 0) };
+        Expect(probes.All(pt => rig.Weights(pt) is var w && MathF.Abs(w.Sum(x => x.Weight) - 1) < 1e-4f && w.All(x => x.Bone >= 0 && x.Bone < rig.Bones.Length && x.Weight >= -1e-6f))
+               && rig.Weights(new Vector3(20, 3, 1)).All(x => rig.Bones[x.Bone].Side == 1) && rig.Weights(new Vector3(-20, 3, 1)).All(x => rig.Bones[x.Bone].Side == 2)
+               && rig.Weights(new Vector3(0, 0, 3)).All(x => rig.Bones[x.Bone].Side == 0),
+            "bird rig weights: sum to 1, a wing vertex on its own wing's bones, a body vertex on the body's");
+        string rn = BirdRig.Name("birdtype1.mesh?birds.dds", new RigFrame(RigClip.Land, 0.5f), rig);
+        Expect(BirdRig.Parse(rn, out var rplain, out int rc, out int rf) && rplain == "birdtype1.mesh?birds.dds" && rc == (int)RigClip.Land && rf == rig.Skin[rc].Length / 2
+               && !BirdRig.Parse("birdtype1.mesh#pzarigx.1?y", out _, out _, out _) && !BirdFold.ParsePose(rn, out _, out _), $"bird rig names round-trip ({rn}), never taken for a fold");
+        string birdMesh = Path.Combine(kenshi, "data", "meshes", "birdtype1.mesh");
+        if (File.Exists(birdMesh))
+        {
+            float Span(int clip, int frame, out float tipLow, out float tipHigh)
+            {
+                var o = Meitou.Data.Ogre.OgreMeshReader.ReadFile(birdMesh);
+                rig.Pose(o, clip, frame);
+                var ps = new[] { o.SharedVertexData }.Concat(o.SubMeshes.Select(sm => sm.VertexData)).Where(d => d is not null).Distinct().SelectMany(d => d!.ReadPositions() ?? []).ToArray();
+                var wingtip = ps.Where(v => MathF.Abs(v.X) > 0).OrderByDescending(v => v.Length()).First();
+                tipLow = ps.Min(v => v.Y); tipHigh = ps.Max(v => v.Y);
+                return ps.All(WildCore.Finite) ? ps.Max(v => v.X) - ps.Min(v => v.X) : float.NaN;
+            }
+            float glideSpan = Span((int)RigClip.Glide, 0, out _, out _);
+            float lowest = float.MaxValue, highest = float.MinValue;
+            for (int f = 0; f < rig.Skin[(int)RigClip.Flap].Length; f++) { Span((int)RigClip.Flap, f, out var low, out var high); lowest = Math.Min(lowest, low); highest = Math.Max(highest, high); }
+            float perchedSpan = Span((int)RigClip.Idle, 0, out _, out _);
+            Expect(glideSpan > 40 && glideSpan < 60 && highest - lowest > 20 && perchedSpan < glideSpan * 0.6f,
+                $"the game's bird on the rig: {glideSpan:0} units across gliding, its wings sweep {highest - lowest:0} units up and down in the beat, {perchedSpan:0} units across perched (wings folded)");
+        }
+        else if (Environment.GetEnvironmentVariable("PZA_NO_KENSHI") != "1") Expect(false, "the game's birdtype1.mesh is there: " + birdMesh);
+        var life = new List<RigClip>();
+        var eb = new WildBird { Phase = Phase.Approach, Length = 3 };
+        for (float t = 0; t < 3; t += 1f / 30) { eb.Clock = t; life.Add(RigPreset.For(eb).Clip); }
+        eb.Phase = Phase.Peck;
+        for (float t = 0; t < 1; t += 1f / 30) { eb.Clock = t; life.Add(RigPreset.For(eb).Clip); }
+        eb.Action = 2; eb.ActionClock = 0.2f; life.Add(RigPreset.For(eb).Clip); eb.Action = 0;
+        eb.Phase = Phase.Flee; eb.Delay = 0.1f;
+        for (float t = 0; t < 2; t += 1f / 30) { eb.Clock = t; life.Add(RigPreset.For(eb).Clip); }
+        var order = life.Where((c, i) => i == 0 || life[i - 1] != c).ToList();
+        Expect(string.Join(",", order) == "Glide,Flap,Land,Idle,Hop,Idle,TakeOff,Flap",
+            $"rig clips over a bird's life: {string.Join(" > ", order)}");
+        Expect(RigPreset.Free(0, true, 7, 3).Clip == RigClip.Idle && RigPreset.Free(BirdFold.FlapPose(4), false, 7, 3) == new RigFrame(RigClip.Flap, 0.25f)
+               && RigPreset.Free(0, false, 7, 3).Clip == RigClip.Glide && RigPreset.Loop(float.NaN, 1) == 0 && RigPreset.Loop(2.5f, 1) == 0.5f,
+            "free birds: resting ones sit, beating ones flap, the rest glide; loops wrap");
+
         // rules: a shore along x = 0, water to the west
         Func<float, float, float> shore = (x, z) => 100 + x * 0.12f;
         var frox = new FroxCore(4) { WaterLevel = 100, Clips = asset.Clips };
@@ -604,6 +654,105 @@ static class P
 
     /// <summary>0.7.0 (user 2026-11-27: "smoother ... less janky wing flapping", the same for the frogs): wing poses, the beat, the smooth
     /// landing and take-off, free birds' beats, frog poses and the Gorillo frog.</summary>
+    static void Stilts(string dir)
+    {
+        Console.WriteLine("== mire stilts (0.12.0)");
+        string at = Path.Combine(dir, "assets", "stilt");
+        var ground = FroxAsset.Read(File.ReadAllBytes(Path.Combine(at, "stilt_ground.pzaf")));
+        var air = FroxAsset.Read(File.ReadAllBytes(Path.Combine(at, "stilt_air.pzaf")));
+        var c = StiltMesh.ClipsOf(ground, air);
+        Expect(ground.Frames.Length == 5 && air.Frames.Length == 4 && ground.Frames.All(f => f.Length >= 2) && air.Frames.All(f => f.Length >= 8)
+               && MathF.Abs(c.HuntSeconds - StiltPreset.StrikeAt - 2.5f) < 0.2f && c.WadeSpeed is > 0.5f and < 6,
+            $"stilt bakes: standing {ground.Vertices} vertices (idle/wade/hunt/take-off head/landing tail {string.Join("/", ground.Frames.Select(f => f.Length))} frames), "
+            + $"flight {air.Vertices} (take-off tail/flap/glide/landing head {string.Join("/", air.Frames.Select(f => f.Length))}); wade {c.WadeSpeed:0.00} units/s");
+        bool finite = ground.Frames.Concat(air.Frames).All(cl => cl.All(f => f.P.All(WildCore.Finite) && f.N.All(WildCore.Finite)));
+        var idle = ground.Frames[0][0].P;
+        float height = idle.Max(v => v.Y) - idle.Min(v => v.Y);
+        float feet = ground.Frames.Take(3).SelectMany(cl => cl).Max(f => MathF.Abs(f.P.Min(v => v.Y)));
+        Expect(finite && height is > 19 and < 23 && feet < 0.3f, $"stilt frames finite; {height / 10:0.00} m standing; feet on the ground in idle, wade and hunt (off by at most {feet:0.00} units)");
+        // the body's (and legs') lowest point: vertices within 2.5 units of the centre line (the spread wings' tips dip far below the body on a
+        // down-stroke; that is the wings moving, not the bird)
+        static float Low((Vector3[] P, Vector3[] N) f) => f.P.Where(v => MathF.Abs(v.X) < StiltMesh.BodyHalfWidth).DefaultIfEmpty(Vector3.Zero).Min(v => v.Y);
+        float up = MathF.Abs(Low(ground.Frames[3][^1]) - Low(air.Frames[0][0])), down = MathF.Abs(Low(air.Frames[3][^1]) - Low(ground.Frames[4][0]));
+        Expect(up < 1.5f && down < 1.5f, $"the two meshes meet at the swaps: take-off {up:0.00} units apart, landing {down:0.00}");
+        var mesh = ground.Mesh(2, 40);
+        Expect(mesh.SubMeshes[0].VertexData!.ReadPositions()!.Length == ground.Vertices && air.Mesh(1, 3).SubMeshes[0].Indices.Indices.Length == air.Indices.Length, "stilt frame meshes whole");
+        Expect(File.Exists(Path.Combine(at, "textures", "ground.png")) && File.Exists(Path.Combine(at, "textures", "air.png")) && File.Exists(Path.Combine(at, "CREDITS.md")),
+            "stilt textures and credit shipped");
+        string n = StiltMesh.PieceName(1, 3, 12);
+        Expect(StiltMesh.Parse(n, out int pm, out int pc, out int pf) && pm == 1 && pc == 3 && pf == 12 && StiltMesh.Is(n)
+               && !StiltMesh.Parse("pza.stilt.mesh#2.0.0?pza.stilt.air.png", out _, out _, out _) && !StiltMesh.Parse("pza.stilt.mesh#0.0.0?pza.stilt.air.png", out _, out _, out _)
+               && !StiltMesh.Parse("pza.stilt.mesh#0.1?pza.stilt.ground.png", out _, out _, out _) && !FroxMesh.Is(n),
+            $"stilt piece names round-trip ({n}); a wrong mesh, texture or part count is refused");
+        Expect(StiltCore.Wanted(12) == StiltPreset.DayCount && StiltCore.Wanted(FireflyPreset.DuskHour) == StiltPreset.DayCount + StiltPreset.Twilight && StiltCore.Wanted(double.NaN) == StiltPreset.DayCount,
+            $"stilts: {StiltCore.Wanted(12)} by day, {StiltCore.Wanted(FireflyPreset.DuskHour)} at dusk");
+
+        // rules: a lagoon. x < -400 deep water, -400..0 shallows (30 cm of water), land rising from x = 0
+        Func<float, float, float> lagoon = (x, z) => x < -400 ? 80 : x < 0 ? 97 : 100 + x * 0.1f;
+        var counts = new Dictionary<string, int>();
+        var preyAsked = new List<float>();
+        var core = new StiltCore(9) { WaterLevel = 100, Clips = c, Count = k => counts[k] = counts.GetValueOrDefault(k) + 1, Prey = (p, r) => { preyAsked.Add(r); return true; } };
+        var focus = new Vector3(-150, 100, 0);
+        float jump = 0, wrongGround = 0, belowInAir = 0;
+        var lastLow = new Dictionary<long, float>();
+        var lastDraw = new Dictionary<long, StiltDraw>();
+        string worstAt = "";
+        var seen = new HashSet<StiltState>();
+        for (int i = 0; i < 30 * 300; i++)
+        {
+            core.Step(1f / 30, focus, 12, true, lagoon, []);
+            foreach (var s in core.All)
+            {
+                seen.Add(s.State);
+                if (s.State is StiltState.Idle or StiltState.Wade or StiltState.Hunt)
+                    wrongGround = Math.Max(wrongGround, MathF.Abs(s.Pos.Y - lagoon(s.Pos.X, s.Pos.Z)) + (core.Shallow(lagoon(s.Pos.X, s.Pos.Z)) ? 0 : 1000));
+                if (s.State is StiltState.Arrive or StiltState.Leave) belowInAir = Math.Max(belowInAir, lagoon(s.Pos.X, s.Pos.Z) - s.Pos.Y);
+            }
+            foreach (var d in core.Snapshot())
+            {
+                var asset = d.Mesh == 0 ? ground : air;
+                float low = d.Position.Y + Low(asset.Frames[d.Clip][d.Frame]) * d.Scale;
+                if (lastLow.TryGetValue(d.Id, out var before) && MathF.Abs(low - before) > jump)
+                    (jump, worstAt) = (MathF.Abs(low - before), $"{lastDraw[d.Id].Mesh}.{lastDraw[d.Id].Clip}.{lastDraw[d.Id].Frame} to {d.Mesh}.{d.Clip}.{d.Frame}");
+                lastLow[d.Id] = low;
+                lastDraw[d.Id] = d;
+            }
+            foreach (var s in core.All) if (s.State == StiltState.Away) lastLow.Remove(s.Id);
+        }
+        Expect(seen.IsSupersetOf([StiltState.Arrive, StiltState.Land, StiltState.Idle, StiltState.Wade, StiltState.Hunt, StiltState.TakeOff, StiltState.Leave]),
+            "stilts live a whole visit alone: " + string.Join(" ", seen.Order()));
+        Expect(wrongGround < 0.01f, $"stilts on the ground stand on the shallows' floor, never on land or in deep water (worst {wrongGround:0.000})");
+        Expect(belowInAir <= 0, $"stilts in the air never dip under the ground (worst {belowInAir:0.0} units)");
+        Expect(jump < 4, $"the drawn bird's body never jumps between frames at 30 fps, swaps and clip changes included (largest step {jump:0.00} units, {worstAt})");
+        Expect(counts.GetValueOrDefault("stilt.strike") > 0 && counts.GetValueOrDefault("stilt.catch") > 0 && preyAsked.All(r => r > 10 && r < 16)
+               && counts.GetValueOrDefault("stilt.strike") >= counts.GetValueOrDefault("stilt.catch") * 2,
+            $"strikes {counts.GetValueOrDefault("stilt.strike")}, catches {counts.GetValueOrDefault("stilt.catch")} (prey asked within {preyAsked.DefaultIfEmpty().Max():0.0} units)");
+
+        // someone walks up to a landed stilt: it takes off that step and climbs away from them
+        var c2 = new StiltCore(5) { WaterLevel = 100, Clips = c };
+        StiltCore.Stilt? landed = null;
+        for (int i = 0; i < 30 * 120 && landed is null; i++)
+        {
+            c2.Step(1f / 30, focus, 12, true, lagoon, []);
+            landed = c2.All.FirstOrDefault(s => s.State is StiltState.Idle or StiltState.Wade or StiltState.Hunt);
+        }
+        Expect(landed is not null, "a stilt lands within two minutes");
+        if (landed is null) return;
+        var walker = new List<Vector3> { landed.Pos + new Vector3(100, 0, 0) };
+        c2.Step(1f / 30, focus, 12, true, lagoon, walker);
+        var flown = c2.All.First(s => s.Id == landed.Id);
+        Expect(flown.State == StiltState.TakeOff, $"someone 10 m off: it takes off at once ({flown.State})");
+        var start = flown.Pos;
+        for (int i = 0; i < 30 * 6; i++) c2.Step(1f / 30, focus, 12, true, lagoon, walker);
+        flown = c2.All.First(s => s.Id == landed.Id);
+        Expect(flown.State == StiltState.Leave && flown.Pos.Y > start.Y + 50 && (flown.Pos.X - walker[0].X) < (start.X - walker[0].X) - 100,
+            $"then flies off, up {flown.Pos.Y - start.Y:0} units and away from them ({flown.State})");
+        c2.Step(1f / 30, focus, 12, false, lagoon, walker);
+        Expect(c2.ActiveCount == 0 && c2.Snapshot().Length == 0, "leaving the Swamp clears them");
+        var frogs = new FrogCore(3) { WaterLevel = 100 };
+        Expect(!frogs.Take(new Vector3(float.NaN, 0, 0), 10) && !frogs.Take(Vector3.Zero, -1) && !new FroxCore(2).Take(Vector3.Zero, 30), "taking prey from nothing takes nothing");
+    }
+
     static void Wings(string kenshi)
     {
         Console.WriteLine("== wing poses and frog poses (0.7.0)");

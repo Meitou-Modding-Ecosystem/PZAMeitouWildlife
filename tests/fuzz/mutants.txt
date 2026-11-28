@@ -242,3 +242,63 @@
 ===
         f.Pos.Y = want;
 >>>
+
+@@ WL-rig-loop | PZAMeitouWildlife\mod\src\RigPose.cs | wings | a rig loop does not wrap (clocks past one cycle ask for frames past the clip)
+<<<
+        return (float)(u - Math.Floor(u));
+===
+        return (float)u;
+>>>
+
+@@ WL-rig-blend | PZAMeitouWildlife\mod\src\BirdRig.cs | wings | a vertex between two rig bones takes the first fully (its weights sum past 1: wings stretch)
+<<<
+                return [(chain[j], 1 - f), (chain[j + 1], f)];
+===
+                return [(chain[j], 1), (chain[j + 1], f)];
+>>>
+
+@@ WL-stilt-flee | PZAMeitouWildlife\mod\src\StiltCore.cs | stilts | a stilt on the ground ignores people (it never takes off when someone walks up)
+<<<
+        if (onGround && (Near(s.Pos, people, StiltPreset.FleeRadius) || Flat(s.Pos - focus).LengthSquared() > StiltPreset.KeepRadius * StiltPreset.KeepRadius))
+===
+        if (onGround && Flat(s.Pos - focus).LengthSquared() > StiltPreset.KeepRadius * StiltPreset.KeepRadius)
+>>>
+
+@@ WL-stilt-deep | PZAMeitouWildlife\mod\src\StiltCore.cs | stilts | a stilt lands and wades in water of any depth (the shallows' lower bound left out)
+<<<
+    public bool Shallow(float g) => float.IsFinite(g) && g <= WaterLevel - StiltPreset.StandMin && g >= WaterLevel - StiltPreset.StandMax;
+===
+    public bool Shallow(float g) => float.IsFinite(g) && g <= WaterLevel - StiltPreset.StandMin;
+>>>
+
+@@ WL-stilt-wade | PZAMeitouWildlife\mod\src\StiltCore.cs | stilts | a wading stilt moves faster than its feet (they slide)
+<<<
+        var next = s.Pos + dir * Clips.WadeSpeed * s.Scale * dt;
+===
+        var next = s.Pos + dir * Clips.WadeSpeed * s.Scale * dt * 3;
+>>>
+
+@@ WL-stilt-hill | PZAMeitouWildlife\mod\src\StiltCore.cs | stilts | a flying stilt goes through hills (the clearance over the ground left out)
+<<<
+        if (s.Pos.Y < floor)
+        {
+===
+        if (s.Pos.Y < floor - 1e6f)
+        {
+>>>
+
+@@ WL-stilt-frame | PZAMeitouWildlife\mod\src\StiltCore.cs | stilts | a clip played once runs past its last frame
+<<<
+        if (loop) u -= Math.Floor(u);
+        return Math.Clamp((int)(u * frames), 0, frames - 1);
+===
+        if (loop) { u -= Math.Floor(u); return Math.Clamp((int)(u * frames), 0, frames - 1); }
+        return Math.Max(0, (int)(u * frames));
+>>>
+
+@@ WL-stilt-ground | PZAMeitouWildlife\mod\src\StiltCore.cs | stilts | a wading stilt keeps its old height when the floor rises or falls under it
+<<<
+        if (Shallow(g)) s.Pos = new Vector3(next.X, g, next.Z);
+===
+        if (Shallow(g)) s.Pos = new Vector3(next.X, s.Pos.Y, next.Z);
+>>>

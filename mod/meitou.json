@@ -1,7 +1,7 @@
 {
   // PZA's Wildlife for Meitou (author PZA, GPLv3 or later). Schema: MeitouClient docs/modding.md "Discovery", docs/modding-dependencies.md "Manifest".
   "id": "pza.wildlife",
-  "version": "0.10.0",
+  "version": "0.12.0",
   "apiVersion": 2,
   "assemblies": ["PZAWildlife.Meitou.dll"],
   "entry": "PZA.Wildlife.Meitou.WildlifeMod",

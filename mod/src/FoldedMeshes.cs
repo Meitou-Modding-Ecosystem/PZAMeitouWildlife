@@ -18,9 +18,20 @@ public static class FoldedMeshes
     /// <summary>The fold level per bird id for this frame's draw, filled by the bird step (locked for thread safety).</summary>
     static readonly object s_lock = new();
     static readonly Dictionary<long, int> s_levels = [];
+    static readonly Dictionary<long, RigFrame> s_rigs = [];
+    static readonly System.Diagnostics.Stopwatch s_clock = System.Diagnostics.Stopwatch.StartNew();
 
-    public static void BeginStep() { lock (s_lock) s_levels.Clear(); }
-    public static void Reset() { lock (s_lock) s_levels.Clear(); }
+    public static void BeginStep() { lock (s_lock) { s_levels.Clear(); s_rigs.Clear(); } }
+    public static void Reset() { lock (s_lock) { s_levels.Clear(); s_rigs.Clear(); } }
+
+    /// <summary>The rig clip a bird shows this frame (0.11.0).</summary>
+    public static void NoteRig(long id, RigFrame frame) { lock (s_lock) s_rigs[id] = frame; }
+
+    public static RigFrame RigOf(long id)
+    {
+        lock (s_lock)
+            return s_rigs.TryGetValue(id, out var f) ? f : RigPreset.Free(0, false, id, s_clock.Elapsed.TotalSeconds);
+    }
 
     public static void Note(long id, int level)
     {
@@ -36,6 +47,20 @@ public static class FoldedMeshes
     public static void SwapPieces(List<DebrisPiece> pieces, int start, Func<string, Vector3?> centreOf)
     {
         if (!Driver.On) return;
+        if (BirdRig.On && BirdRig.Loaded is { } rig)
+        {
+            for (int i = Math.Max(0, start); i < pieces.Count; i++)
+            {
+                var piece = pieces[i];
+                if (!BirdFold.CanFoldMesh(piece.Mesh) || centreOf(piece.Mesh) is not { } centre) continue;
+                string name = BirdRig.Name(piece.Mesh, RigOf(piece.Id), rig);
+                if (centreOf(name) is not { } middle) continue;
+                var origin = piece.Position - Vector3.Transform(centre * piece.Scale, piece.Rotation);
+                pieces[i] = piece with { Mesh = name, Position = origin + Vector3.Transform(middle * piece.Scale, piece.Rotation) };
+                Counters.Add("draw.rig");
+            }
+            return;
+        }
         lock (s_lock)
         {
             if (s_levels.Count == 0) return;

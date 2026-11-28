@@ -25,6 +25,9 @@ public static class Driver
     /// <summary>Froxlotls at the Swamp's water edges (FroxCore; drawn by FroxMesh).</summary>
     public static readonly FroxCore Frox = new() { Count = Counters.Add, WaterLevel = global::Meitou.Data.World.WorldWater.Height };
     static long s_lastFroxNote;
+    /// <summary>Mire Stilts in the Swamp's shallows (StiltCore; drawn by StiltMesh). A catch takes a froxlotl or a frog within beak reach.</summary>
+    public static readonly StiltCore Stilts = new() { Count = Counters.Add, WaterLevel = global::Meitou.Data.World.WorldWater.Height, Prey = (p, r) => Frox.Take(p, r) || Frogs.Take(p, r) };
+    static long s_lastStiltNote;
 
     sealed record EnvState(double GameHours, bool InSwamp, float Rain, bool Paused, Vector3 Focus, Func<float, float, float>? Ground);
     static volatile EnvState s_env = new(12.0, false, 0f, false, new Vector3(float.NaN), null);
@@ -59,6 +62,7 @@ public static class Driver
             Fireflies.Reset();
             Frogs.Reset();
             Frox.Step(0, new System.Numerics.Vector3(float.NaN), 0, false, null, []);
+            Stilts.Step(0, new System.Numerics.Vector3(float.NaN), 0, false, null, []);
             s_lastFireflyTick = 0;
             Counters.Add("feed.new_world");
         }
@@ -110,6 +114,18 @@ public static class Driver
         if (Stopwatch.GetElapsedTime(s_lastFroxNote, now).TotalSeconds < 10) return;
         s_lastFroxNote = now;
         if (env.InSwamp) Log.Line($"froxlotls: {Frox.ActiveCount} out near the camera in {string.Join(", ", Frox.Pool.Select(c => FroxPreset.Colours[c]))}");
+    }
+
+    /// <summary>Host thread, once a frame (the stilts' drawing): like the frogs.</summary>
+    public static void StepStilts(float dt)
+    {
+        var env = s_env;
+        if (env.Paused) dt = 0f;
+        Stilts.Step(dt, env.Focus, env.GameHours, env.InSwamp, env.Ground, s_people);
+        long now = Stopwatch.GetTimestamp();
+        if (Stopwatch.GetElapsedTime(s_lastStiltNote, now).TotalSeconds < 10) return;
+        s_lastStiltNote = now;
+        if (env.InSwamp) Log.Line($"mire stilts: {Stilts.ActiveCount} in sight of {StiltCore.Wanted(env.GameHours)} wanted");
     }
 
     public static void StepFireflies(Vector3 eye)
@@ -238,7 +254,11 @@ public static class Driver
         Access.Position(bird) = held.Position;
         Access.Forward(bird) = held.Forward;
         if (!keep) GiveBack(bird);
-        else if (Patches.FoldOn) FoldedMeshes.Note(Access.Id(bird), held.WingPose);
+        else if (Patches.FoldOn)
+        {
+            FoldedMeshes.Note(Access.Id(bird), held.WingPose);
+            FoldedMeshes.NoteRig(Access.Id(bird), RigPreset.For(held));
+        }
         return false;
     }
 
@@ -247,10 +267,19 @@ public static class Driver
     /// <summary>A free bird in flight beats its wings while climbing and in bursts (BirdFold.FreePose); resting ones keep the game's mesh.</summary>
     static void NoteFree(object bird)
     {
+        long id = Access.Id(bird);
+        double now = s_wingClock.Elapsed.TotalSeconds;
+        if (Access.State(bird) is BirdFlocks.BirdState.Rest)
+        {
+            FoldedMeshes.NoteRig(id, RigPreset.Free(0, true, id, now));
+            return;
+        }
         if (Access.State(bird) is not (BirdFlocks.BirdState.Wander or BirdFlocks.BirdState.Follow or BirdFlocks.BirdState.Circle)) return;
         var forward = Access.Forward(bird);
         float climb = forward.Length() > 1e-4f ? forward.Y / forward.Length() : 0;
-        FoldedMeshes.Note(Access.Id(bird), BirdFold.FreePose(Access.Id(bird), s_wingClock.Elapsed.TotalSeconds, climb));
+        int pose = BirdFold.FreePose(id, now, climb);
+        FoldedMeshes.Note(id, pose);
+        FoldedMeshes.NoteRig(id, RigPreset.Free(pose, false, id, now));
     }
 
     /// <summary>A bird the game flies freely (wandering, following, circling, resting) and that holds none of the game's attractors.</summary>

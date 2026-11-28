@@ -145,6 +145,11 @@ public static class Patches
             if (Driver.Settings.Froxlotls) FroxMesh.AddPieces(pieces, centreOf);
         }
         catch (Exception e) { Log.Exception("frox", e); }
+        try
+        {
+            if (Driver.Settings.Stilts) StiltMesh.AddPieces(pieces, centreOf);
+        }
+        catch (Exception e) { Log.Exception("stilts", e); }
     }
 
     /// <summary>A marked bird mesh is made or taken from the cache here; every other name goes to the game's own Load.</summary>
@@ -160,6 +165,32 @@ public static class Patches
             catch (Exception e)
             {
                 Log.Exception("frog.load", e);
+                return true;
+            }
+        }
+        if (limb is null && file is not null && file.Contains(BirdRig.Marker, StringComparison.Ordinal))
+        {
+            try
+            {
+                __result = BirdRig.Get(__instance, file);
+                return false;
+            }
+            catch (Exception e)
+            {
+                Log.Exception("rig.load", e);
+                return true;
+            }
+        }
+        if (limb is null && StiltMesh.Is(file))
+        {
+            try
+            {
+                __result = StiltMesh.Get(__instance, file!);
+                return false;
+            }
+            catch (Exception e)
+            {
+                Log.Exception("stilt.load", e);
                 return true;
             }
         }

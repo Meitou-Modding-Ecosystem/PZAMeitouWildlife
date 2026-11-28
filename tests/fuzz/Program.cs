@@ -11,6 +11,10 @@
 //   frox          0.8.0 FroxCore over random shores, hours, people and steps: finite, never more than the night count, colours from the pool, a
 //                 run never faster than its run's ground speed, frames in range, splashes capped; FroxAsset.Read on cut and flipped bakes only
 //                 refuses (InvalidDataException) and never returns an index past its vertices; frog animation names stay in range.
+//   stilts        0.12.0 StiltCore over lagoons and random land, hours, people and steps: finite, never more than wanted at dusk, standing
+//                 only on the shallows' floor, never grounded with someone in the flee radius, a flying body never under the clearance, a wade
+//                 never faster than its feet, frames in range, names round-trip, prey asked only within beak reach, splashes capped; a
+//                 froxlotl bake is refused as a stilt bake.
 //   driver.near   Driver.Near: at most 32 corpses, all within reach of the eye and the nearest ones, every person kept is near a kept corpse.
 using System.Numerics;
 using PZA.MeitouUi.Fuzz;
@@ -34,6 +38,11 @@ static class Program
         new("frox", 2000, FroxTarget, fz => fz.Expect(fz.Counted("rule.frox.flee") > 0 && fz.Counted("rule.frox.rest") > 0 && fz.Counted("rule.frox.splash") > 0 && fz.Counted("rule.frox.swim_away") > 0, "froxlotls never rested, fled, splashed or swam away")),
         new("firefly.blink", 20000, BlinkTarget),
         new("night.sounds", 20000, NightTarget),
+        new("stilts", 600, StiltTarget, fz =>
+        {
+            foreach (var rule in new[] { "arrive", "land", "wade", "hunt", "strike", "catch", "takeoff", "away", "cleared" })
+                fz.Expect(fz.Counted("rule.stilt." + rule) > 0, $"stilt rule '{rule}' never fired in {fz.Case + 1} cases");
+        }),
         new("frogs", 3000, FrogTarget, fz => fz.Expect(fz.Counted("rule.frogs.leap") > 0 && fz.Counted("rule.frogs.sit") > 0, "frogs never sat or leapt")),
         new("fireflies", 5000, FireflyTarget, fz =>
         {
@@ -177,6 +186,23 @@ static class Program
         catch { return float.NaN; }
     }
 
+    static byte[]? s_rigBytes;
+    static BirdRig? s_rig;
+
+    static byte[] RigBytes([System.Runtime.CompilerServices.CallerFilePath] string source = "")
+    {
+        if (s_rigBytes is not null) return s_rigBytes;
+        foreach (string start in new[] { AppContext.BaseDirectory, Path.GetDirectoryName(source) ?? "", Environment.CurrentDirectory })
+            for (var d = string.IsNullOrEmpty(start) ? null : new DirectoryInfo(start); d is not null; d = d.Parent)
+            {
+                string p = Path.Combine(d.FullName, "mod", "assets", "birdrig", "birdrig.pzab");
+                if (File.Exists(p)) return s_rigBytes = File.ReadAllBytes(p);
+            }
+        throw new FileNotFoundException("birdrig.pzab not found");
+    }
+
+    static BirdRig Rig() => s_rig ??= BirdRig.Read(RigBytes());
+
     static byte[]? s_bake;
 
     /// <summary>The shipped bake (read once from the repo), for the reader's target.</summary>
@@ -317,6 +343,86 @@ static class Program
         fz.Expect(FrogMesh.ParseAnim(name, out int c2, out int f2) && f2 < GorilloBake.Clips[c2].Frames, $"frog animation name {name} out of range");
     }
 
+    /// <summary>0.12.0 Mire Stilts (see the header).</summary>
+    static void StiltTarget(PzaFuzz fz)
+    {
+        bool lagoon = fz.Chance(0.6);
+        float depth = (float)fz.Range(0.5, 8), hill = (float)fz.Range(0, 400);
+        Func<float, float, float> ground = lagoon
+            ? (x, z) => x < -400 ? 80 : x < 0 ? 100 - depth + 0.5f * MathF.Sin(z * 0.05f) : 100 + x * 0.1f + hill * MathF.Max(0, MathF.Sin(x * 0.004f))
+            : Terrain(fz);
+        var prey = new List<float>();
+        var core = new StiltCore((int)fz.Below(1 << 30)) { WaterLevel = 100, Count = r => fz.Count("rule." + r), Prey = (p, r) => { prey.Add(r); return fz.Chance(0.5); } };
+        var clips = core.Clips;
+        var focus = lagoon ? new Vector3((float)fz.Range(-300, 50), 100, (float)fz.Range(-300, 300)) : new Vector3((float)fz.Range(-5e4, 5e4), 0, (float)fz.Range(-5e4, 5e4));
+        var people = new List<Vector3>();
+        var last = new Dictionary<long, (Vector3 Pos, StiltState State)>();
+        bool swamp = true;
+        // independent of the core's own Shallow (a planted bug there must not hide itself)
+        static bool Shallow(float g) => float.IsFinite(g) && g <= 100 - StiltPreset.StandMin && g >= 100 - StiltPreset.StandMax;
+        for (int step = fz.Int(50, 1500); step > 0; step--)
+        {
+            if (fz.Chance(0.01))
+            {
+                people.Clear();
+                for (int n = fz.Int(0, 3); n > 0; n--)
+                    people.Add(fz.Chance(0.05) ? new Vector3(fz.Float(), fz.Float(), fz.Float()) : focus + new Vector3((float)fz.Range(-400, 400), 0, (float)fz.Range(-400, 400)));
+            }
+            if (fz.Chance(0.003)) swamp = !swamp;
+            float dt = fz.Chance(0.9) ? (float)fz.Range(0.01, 0.2) : Dt(fz);
+            double hour = fz.Chance(0.05) ? fz.Double() : fz.Range(-24, 48);
+            core.Step(dt, fz.Chance(0.005) ? new Vector3(fz.Float(), 0, fz.Float()) : focus, hour, swamp, ground, people);
+            float used = float.IsFinite(dt) && dt > 0 ? Math.Min(dt, 0.25f) : 0;
+            var all = core.All;
+            fz.Expect(all.Count <= StiltPreset.DayCount + StiltPreset.Twilight, $"{all.Count} stilts");
+            foreach (var s in all.Where(s => s.State != StiltState.Away))
+            {
+                fz.Expect(WildCore.Finite(s.Pos) && float.IsFinite(s.Yaw), $"non-finite stilt {s.Pos} {s.Yaw} in {s.State}");
+                float g = SafeGround(ground, s.Pos.X, s.Pos.Z);
+                if (s.State is StiltState.Idle or StiltState.Wade or StiltState.Hunt)
+                {
+                    fz.Expect(Shallow(g) && MathF.Abs(s.Pos.Y - g) < 1e-3f, $"a stilt standing at {s.Pos.Y} on ground {g} ({s.State}): out of the shallows or off the floor");
+                    foreach (var q in people.Where(WildCore.Finite))
+                        fz.Expect(new Vector2(q.X - s.Pos.X, q.Z - s.Pos.Z).Length() >= StiltPreset.FleeRadius, $"a stilt stays {s.State} with someone {new Vector2(q.X - s.Pos.X, q.Z - s.Pos.Z).Length()} units off");
+                }
+                if (s.State is StiltState.Arrive or StiltState.Leave && float.IsFinite(g))
+                    fz.Expect(s.Pos.Y + core.AirLow * s.Scale >= g + StiltPreset.AirClear - 1e-2f, $"a flying stilt's body {s.Pos.Y + core.AirLow * s.Scale} under the clearance over ground {g}");
+                if (s.State == StiltState.Wade && last.TryGetValue(s.Id, out var was) && was.State == StiltState.Wade)
+                {
+                    float moved = new Vector2(s.Pos.X - was.Pos.X, s.Pos.Z - was.Pos.Z).Length();
+                    float ulp = 2.5e-7f * Math.Max(Math.Max(MathF.Abs(s.Pos.X), MathF.Abs(s.Pos.Z)), 1);
+                    fz.Expect(moved <= clips.WadeSpeed * s.Scale * used + 1e-3f + 4 * ulp, $"a stilt waded {moved} in {used} s (its wade: {clips.WadeSpeed * s.Scale} units/s)");
+                }
+            }
+            last = all.ToDictionary(s => s.Id, s => (s.Pos, s.State));
+            foreach (var d in core.Snapshot())
+            {
+                int frames = (d.Mesh, d.Clip) switch
+                {
+                    (0, 0) => clips.IdleFrames, (0, 1) => clips.WadeFrames, (0, 2) => clips.HuntFrames, (0, 3) => clips.TakeoffHeadFrames, (0, 4) => clips.LandTailFrames,
+                    (1, 0) => clips.TakeoffTailFrames, (1, 1) => clips.FlapFrames, (1, 2) => clips.GlideFrames, (1, 3) => clips.LandHeadFrames, _ => 0,
+                };
+                fz.Expect(d.Frame >= 0 && d.Frame < frames, $"stilt frame {d.Mesh}.{d.Clip}.{d.Frame} out of range ({frames})");
+                fz.Expect(StiltMesh.Parse(StiltMesh.PieceName(d.Mesh, d.Clip, d.Frame), out int m, out int c, out int f) && (m, c, f) == (d.Mesh, d.Clip, d.Frame), "stilt piece name round trip");
+            }
+            if (fz.Chance(0.05)) fz.Expect(core.TakeSplashes().Count <= StiltPreset.SplashQueue, "stilt splashes over the cap");
+        }
+        fz.Expect(prey.All(r => r > 0 && r <= StiltPreset.BeakReach * StiltPreset.ScaleMax + 1e-3f), "a stilt reached for prey farther than its beak");
+        // any clock, length and frame count: a frame within the clip (0 for an empty one), looping or played once
+        int fcount = fz.Int(-3, 90);
+        float fsec = fz.Chance(0.3) ? fz.Float() : (float)fz.Range(-1, 5), ftime = fz.Chance(0.3) ? fz.Float() : (float)fz.Range(-2, 20);
+        int fr = StiltCore.Frame(ftime, fsec, fcount, fz.Chance(0.5));
+        fz.Expect(fr >= 0 && fr <= Math.Max(0, fcount - 1), $"stilt frame {fr} for {ftime} s into a {fsec} s clip of {fcount} frames");
+        // names: anything at all parses to an in-range piece or is refused, never throws
+        string junk = fz.Chance(0.5) ? StiltMesh.Name + "#" + fz.Int(-2, 4) + "." + fz.Int(-2, 7) + "." + fz.Int(-2, 99) + "?" + StiltMesh.TextureName(fz.Int(0, 2)) : new string((char)fz.Int(32, 127), fz.Int(0, 30));
+        try { if (StiltMesh.Parse(junk, out int jm, out int jc, out int jf)) fz.Expect(jm is 0 or 1 && jc is >= 0 and <= 4 && jf >= 0, $"stilt name {junk} parsed out of range"); }
+        catch (Exception e) { fz.Expect(false, $"StiltMesh.Parse threw {e.GetType().Name}"); }
+        // a froxlotl bake is not a stilt bake: refused as data, never an index error
+        try { StiltMesh.ClipsOf(FroxAsset.Read(Bake()), FroxAsset.Read(Bake())); fz.Expect(false, "two froxlotl bakes taken for the stilt's"); }
+        catch (InvalidDataException) { }
+        catch (Exception e) { fz.Expect(false, $"StiltMesh.ClipsOf threw {e.GetType().Name}"); }
+    }
+
     /// <summary>0.7.0 wing and frog poses (see the header).</summary>
     static void WingsTarget(PzaFuzz fz)
     {
@@ -368,6 +474,35 @@ static class Program
         b.Action = 0; Look("hop end");
         b.Phase = Phase.Flee;
         for (b.Clock = 0; b.Clock < b.Delay + 1; b.Clock += dt) Look("take-off");
+
+        // eagle clips: any bird, any clock: a clip the bake has and U in 0..1, so the frame index is in range
+        var eb = new WildBird
+        {
+            Phase = (Phase)fz.Int(0, 8), Clock = fz.Chance(0.1) ? fz.Float() : (float)fz.Range(-5, 200), Length = fz.Chance(0.1) ? fz.Float() : (float)fz.Range(-1, 20),
+            Delay = (float)fz.Range(0, 1), Action = fz.Int(0, 4), ActionClock = fz.Chance(0.1) ? fz.Float() : (float)fz.Range(-1, 2),
+        };
+        foreach (var ef in new[] { RigPreset.For(eb), RigPreset.Free(fz.Int(-5, 130), fz.Chance(0.3), fz.Int(-1000000, 1000000), fz.Chance(0.1) ? fz.Double() : fz.Range(0, 1e7)) })
+        {
+            fz.Expect(ef.Clip is >= RigClip.Glide and <= RigClip.Idle && float.IsFinite(ef.U) && ef.U >= 0 && ef.U <= 1, $"eagle {ef.Clip} at {ef.U} for a {eb.Phase} bird");
+            int frames = fz.Int(1, 40);
+            fz.Expect(ef.Index(frames) is var ix && ix >= 0 && ix < frames, $"eagle frame {ef.Index(frames)} of {frames}");
+        }
+
+        // the bird rig's weights on any point: valid bones, summing to 1
+        var rig = Rig();
+        var pt = new Vector3(fz.Chance(0.1) ? fz.Float() : (float)fz.Range(-40, 40), (float)fz.Range(-10, 10), fz.Chance(0.1) ? fz.Float() : (float)fz.Range(-15, 15));
+        var rw = rig.Weights(pt);
+        fz.Expect(rw.Length > 0 && rw.All(x => x.Bone >= 0 && x.Bone < rig.Bones.Length && x.Weight >= -1e-6f) && MathF.Abs(rw.Sum(x => x.Weight) - 1) < 1e-3f,
+            $"rig weights at {pt}: {string.Join(", ", rw)}");
+        if (fz.Chance(0.02))
+        {
+            var bad = (byte[])RigBytes().Clone();
+            if (fz.Chance(0.5)) bad = bad[..fz.Int(0, bad.Length)];
+            else for (int n = fz.Int(1, 6); n > 0; n--) bad[fz.Int(8, bad.Length)] = (byte)fz.Int(0, 256);
+            try { BirdRig.Read(bad); }
+            catch (InvalidDataException) { }
+            catch (Exception e) { fz.Expect(false, $"BirdRig.Read threw {e.GetType().Name}: {e.Message}"); }
+        }
 
         // frogs
         float stretch = fz.Chance(0.2) ? fz.Float() : (float)fz.Range(-3, 3);

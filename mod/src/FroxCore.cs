@@ -323,6 +323,29 @@ public sealed class FroxCore
         Count?.Invoke("frox.swim_shore");
     }
 
+
+    /// <summary>A Mire Stilt's catch: the nearest one out within <paramref name="radius"/> of the point (flat) is gone, as if eaten (it comes
+    /// back later somewhere else, like one that dived); true when one was taken.</summary>
+    public bool Take(Vector3 at, float radius)
+    {
+        if (!WildCore.Finite(at) || !float.IsFinite(radius) || radius <= 0) return false;
+        lock (_lock)
+        {
+            Frox? best = null;
+            float bestD = radius * radius;
+            foreach (var f in _all)
+            {
+                if (f.State is FroxState.Away or FroxState.Dive or FroxState.Swim) continue;
+                float d = Flat(f.Pos - at).LengthSquared();
+                if (d <= bestD) (best, bestD) = (f, d);
+            }
+            if (best is null) return false;
+            GoAway(best, Range(FroxPreset.ReturnMin, FroxPreset.ReturnMax));
+            Count?.Invoke("frox.taken");
+            return true;
+        }
+    }
+
     void GoAway(Frox f, float seconds)
     {
         f.State = FroxState.Away;

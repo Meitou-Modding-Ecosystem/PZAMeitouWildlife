@@ -25,6 +25,8 @@ public sealed class FroxAsset
     public FroxClips Clips = new();
     /// <summary>Per clip (0 rest, 1 walk, 2 run): frames of positions and normals.</summary>
     public (Vector3[] P, Vector3[] N)[][] Frames = [];
+    /// <summary>Every clip's length (s), in file order.</summary>
+    public float[] Seconds = [];
 
     /// <summary>Reads a .pzaf; throws InvalidDataException on anything malformed (sizes are checked before every read).</summary>
     public static FroxAsset Read(byte[] file)
@@ -59,10 +61,10 @@ public sealed class FroxAsset
             if (a.Indices[i] >= a.Vertices) throw new InvalidDataException("index past the vertices");
         }
         int clips = Int();
-        if (clips is not (3 or 4)) throw new InvalidDataException("want rest, walk, run (and swim)");
-        a.Frames = new (Vector3[], Vector3[])[4][];
-        var seconds = new float[4];
-        var counts = new int[4];
+        if (clips is < 3 or > 8) throw new InvalidDataException("want 3 to 8 clips");
+        a.Frames = new (Vector3[], Vector3[])[Math.Max(4, clips)][];
+        var seconds = new float[Math.Max(4, clips)];
+        var counts = new int[Math.Max(4, clips)];
         for (int c = 0; c < clips; c++)
         {
             Need(1);
@@ -92,13 +94,15 @@ public sealed class FroxAsset
         if (clips == 3)    // an older bake without the swim: it swims with the run
             (a.Frames[3], seconds[3], counts[3]) = (a.Frames[2], seconds[2], counts[2]);
         a.Clips = new FroxClips(seconds[0], counts[0], seconds[1], counts[1], walkSpeed, seconds[2], counts[2], runSpeed, seconds[3], counts[3]);
+        a.Seconds = seconds;
         return a;
     }
 
     /// <summary>One frame as an Ogre mesh in memory (positions, normals, texture coordinates; 32-bit indices).</summary>
     public OgreMesh Mesh(int clip, int frame)
     {
-        var (p, n) = Frames[Math.Clamp(clip, 0, 3)][Math.Clamp(frame, 0, Frames[Math.Clamp(clip, 0, 3)].Length - 1)];
+        clip = Math.Clamp(clip, 0, Frames.Length - 1);
+        var (p, n) = Frames[clip][Math.Clamp(frame, 0, Frames[clip].Length - 1)];
         const ushort stride = 32;
         var data = new byte[Vertices * stride];
         var span = data.AsSpan();
