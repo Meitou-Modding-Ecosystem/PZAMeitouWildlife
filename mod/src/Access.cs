@@ -69,7 +69,25 @@ public static class Access
             if (s_session is not null && s_session.FieldType != typeof(WorldSession)) missing.Add("field GameHost.Session (WorldSession)");
         }
         ResolveFold();
+        ResolveFireflies();
         return missing;
+    }
+
+    // ---- glowing fireflies (optional: a miss leaves birds working, fireflies off)
+    public static MethodInfo? ParticlePrepare;
+    public static string? FireflyMissing { get; private set; }
+    public static bool CanDrawFireflies => FireflyMissing is null;
+
+    static void ResolveFireflies()
+    {
+        var pr = typeof(global::Meitou.Game.Rendering.Particles.ParticleRenderer);
+        ParticlePrepare = pr.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .FirstOrDefault(m => m.Name == "Prepare" && m.GetParameters().Any(p => p.Name == "view" && p.ParameterType == typeof(Matrix4x4)));
+        var tracers = pr.GetProperty("Tracers");
+        var lacks = new List<string>();
+        if (ParticlePrepare is null) lacks.Add("ParticleRenderer.Prepare");
+        if (tracers is null) lacks.Add("ParticleRenderer.Tracers");
+        FireflyMissing = lacks.Count == 0 ? null : string.Join(", ", lacks);
     }
 
     // ---- folded wings (optional: a miss leaves the birds' wings spread, the rest works)
@@ -151,4 +169,84 @@ public static class Access
 
     // ---- the host (host thread)
     public static WorldSession? Session(object birdsHost) => s_host?.GetValue(birdsHost) is { } host ? s_session.GetValue(host) as WorldSession : null;
+
+    static FieldInfo? s_playerField, s_bannerField, s_biomeNameField;
+    static PropertyInfo? s_bannerProp, s_regionAtProp;
+    static bool s_biomeResolved;
+
+    /// <summary>Current biome name under the camera pivot (queries BiomeBanner.RegionAt directly so loading inside a biome works immediately,
+    /// falling back to BiomeBanner._biomeName if RegionAt is unavailable).</summary>
+    public static string? BiomeName(object birdsHost, WorldSession session)
+    {
+        if (s_host?.GetValue(birdsHost) is not { } host) return null;
+        if (!s_biomeResolved)
+        {
+            s_biomeResolved = true;
+            var ht = host.GetType();
+            s_playerField = AccessTools.GetDeclaredFields(ht).FirstOrDefault(f => f.FieldType.Name == "PlayerInterface");
+            if (s_playerField is not null)
+            {
+                var pt = s_playerField.FieldType;
+                s_bannerProp = AccessTools.Property(pt, "BiomeBanner");
+                s_bannerField = AccessTools.GetDeclaredFields(pt).FirstOrDefault(f => f.FieldType.Name == "BiomeBanner");
+                var bt = s_bannerProp?.PropertyType ?? s_bannerField?.FieldType;
+                if (bt is not null)
+                {
+                    s_regionAtProp = AccessTools.Property(bt, "RegionAt");
+                    s_biomeNameField = AccessTools.Field(bt, "_biomeName");
+                }
+            }
+        }
+        if (s_playerField is null) return null;
+        var player = s_playerField.GetValue(host);
+        if (player is null) return null;
+        var banner = s_bannerProp is not null ? s_bannerProp.GetValue(player) : s_bannerField?.GetValue(player);
+        if (banner is null) return null;
+
+        // Primary path: query RegionAt(pivot.X, pivot.Z) so Swamp is detected on frame 1 even when loading a save inside it.
+        if (s_regionAtProp?.GetValue(banner) is Func<float, float, (string Id, string Name)?> regionAt)
+        {
+            var pivot = session.Camera.Current.Target;
+            if (WildCore.Finite(pivot) && regionAt(pivot.X, pivot.Z) is { } here) return here.Name;
+        }
+        return s_biomeNameField?.GetValue(banner) as string;
+    }
+
+    static FieldInfo? s_gpuField, s_surfacesField, s_rainField, s_terrainField;
+    static MethodInfo? s_heightAtMethod;
+    static bool s_envResolved;
+
+    static void ResolveEnv(Type hostType)
+    {
+        if (s_envResolved) return;
+        s_envResolved = true;
+        s_gpuField = AccessTools.Field(hostType, "Gpu");
+        if (s_gpuField is null) return;
+        var gt = s_gpuField.FieldType;
+        s_surfacesField = AccessTools.Field(gt, "Surfaces");
+        if (s_surfacesField is not null) s_rainField = AccessTools.Field(s_surfacesField.FieldType, "Rain");
+        s_terrainField = AccessTools.Field(gt, "Terrain");
+        if (s_terrainField is not null) s_heightAtMethod = AccessTools.Method(s_terrainField.FieldType, "HeightAt", [typeof(float), typeof(float)]);
+    }
+
+    /// <summary>Current rain strength (0..1) from GameHost.Gpu.Surfaces.Rain, or 0 if unavailable.</summary>
+    public static float RainStrength(object birdsHost)
+    {
+        if (s_host?.GetValue(birdsHost) is not { } host) return 0f;
+        ResolveEnv(host.GetType());
+        if (s_gpuField?.GetValue(host) is not { } gpu) return 0f;
+        if (s_surfacesField?.GetValue(gpu) is not { } surfaces) return 0f;
+        return s_rainField?.GetValue(surfaces) is float r && float.IsFinite(r) ? r : 0f;
+    }
+
+    /// <summary>Terrain height query from GameHost.Gpu.Terrain.HeightAt, so fireflies work even without bird flocks.</summary>
+    public static Func<float, float, float>? TerrainHeight(object birdsHost)
+    {
+        if (s_host?.GetValue(birdsHost) is not { } host) return null;
+        ResolveEnv(host.GetType());
+        if (s_gpuField?.GetValue(host) is not { } gpu) return null;
+        if (s_terrainField?.GetValue(gpu) is not { } terrain || s_heightAtMethod is null) return null;
+        try { return s_heightAtMethod.CreateDelegate<Func<float, float, float>>(terrain); }
+        catch { return null; }
+    }
 }

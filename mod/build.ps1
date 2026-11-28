@@ -36,6 +36,19 @@ New-Item -ItemType Directory -Force (Join-Path $stage "lang") | Out-Null
 Copy-Item (Join-Path $bin.FullName "PZAWildlife.Meitou.dll") $stage -Force
 Copy-Item (Join-Path $here "meitou.json") $stage -Force
 Copy-Item (Join-Path $here "lang\meitou.*.txt") (Join-Path $stage "lang") -Force
+# the froxlotl: the bake and its colours (TheIvoryDisaster's model and textures, PZA's gait), with its credit
+New-Item -ItemType Directory -Force (Join-Path $stage "assets\froxlotl\textures") | Out-Null
+Copy-Item (Join-Path $here "assets\froxlotl\froxlotl.pzaf") (Join-Path $stage "assets\froxlotl") -Force
+Copy-Item (Join-Path $here "assets\froxlotl\CREDITS.md") (Join-Path $stage "assets\froxlotl") -Force
+Copy-Item (Join-Path $here "assets\froxlotl\textures\*.png") (Join-Path $stage "assets\froxlotl\textures") -Force
+# the birds' rig: Mesh2Motion's bird skeleton and clips (CC0), baked by tools\birds\bake_bird_rig.py (no game data)
+New-Item -ItemType Directory -Force (Join-Path $stage "assets\birdrig") | Out-Null
+Copy-Item (Join-Path $here "assets\birdrig\*") (Join-Path $stage "assets\birdrig") -Force
+# the Mire Stilt: its two bakes and textures (the user's own Meshy models, Mesh2Motion's CC0 bird rig), with the credit
+New-Item -ItemType Directory -Force (Join-Path $stage "assets\stilt\textures") | Out-Null
+Copy-Item (Join-Path $here "assets\stilt\*.pzaf") (Join-Path $stage "assets\stilt") -Force
+Copy-Item (Join-Path $here "assets\stilt\CREDITS.md") (Join-Path $stage "assets\stilt") -Force
+Copy-Item (Join-Path $here "assets\stilt\textures\*.png") (Join-Path $stage "assets\stilt\textures") -Force
 
 # the data mod Meitou lists the folder by: an FCS mod file with no records, author PZA (same layout as PZA's other Meitou mods)
 function Write-FcsString([System.IO.BinaryWriter]$w, [string]$s) {
