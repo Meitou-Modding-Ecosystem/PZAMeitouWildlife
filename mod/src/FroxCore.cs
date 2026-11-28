@@ -14,7 +14,11 @@ public static class FroxPreset
     /// <summary>Anyone within FleeRadius (7 m) sends it running; a new one rests at least SpawnClear (10 m) from everyone.</summary>
     public const float FleeRadius = 70, SpawnClear = 100;
     /// <summary>The turn toward the water before the run (s), the longest run (s), the slip under (s, units).</summary>
-    public const float TurnSeconds = 0.15f, RunLongest = 3, DiveSeconds = 0.4f, DiveDepth = 4;
+    public const float TurnSeconds = 0.15f, RunLongest = 3, DiveSeconds = 0.6f, DiveDepth = 4;
+    /// <summary>The swim away (0.10.0, user: "make the froxlotls swim away underwater"): SwimMin..SwimMax s just under the surface
+    /// (SwimDepth units, never closer than Keel to the bottom), at SwimSpeed units/s times its scale, easing round (TurnRate rad/s) toward
+    /// the deepest water it can see (Look units ahead, checked every 0.5 s), never onto land; then it sinks away.</summary>
+    public const float SwimMin = 3, SwimMax = 5, SwimDepth = 1.5f, Keel = 0.3f, SwimSpeed = 4.5f, TurnRate = 2.5f, Look = 25;
     /// <summary>The run plays RunRate times faster than baked and covers ground as fast (0.9.0, user: "they take forever to scamper into the
     /// water"): its feet still don't slide.</summary>
     public const float RunRate = 2.2f;
@@ -33,11 +37,11 @@ public static class FroxPreset
 
 /// <summary>The baked clips' timing and ground speeds (FroxAsset), with defaults that match the shipped bake for the check.</summary>
 public sealed record FroxClips(float RestSeconds = 2.22f, int RestFrames = 12, float WalkSeconds = 1.0f, int WalkFrames = 20, float WalkSpeed = 1.1f,
-                               float RunSeconds = 0.42f, int RunFrames = 16, float RunSpeed = 2.77f);
+                               float RunSeconds = 0.42f, int RunFrames = 16, float RunSpeed = 2.77f, float SwimSeconds = 0.77f, int SwimFrames = 16);
 
-public enum FroxState { Rest = 1, Crawl = 2, Turn = 3, Run = 4, Dive = 5, Away = 6 }
+public enum FroxState { Rest = 1, Crawl = 2, Turn = 3, Run = 4, Dive = 5, Away = 6, Swim = 7 }
 
-/// <summary>The clip drawn: 0 rest, 1 walk, 2 run.</summary>
+/// <summary>The clip drawn: 0 rest, 1 walk, 2 run, 3 swim.</summary>
 public readonly record struct FroxDraw(long Id, Vector3 Position, float Yaw, float Scale, int Colour, int Clip, int Frame);
 
 public sealed class FroxCore
@@ -47,7 +51,7 @@ public sealed class FroxCore
         public long Id;
         public FroxState State;
         public Vector3 Pos, Water;
-        public float Yaw, TurnFrom, TurnTo, Scale, Clock, Timer, Anim;
+        public float Yaw, TurnFrom, TurnTo, Scale, Clock, Timer, Anim, DiveFrom, WantYaw, LookTimer;
         public int Colour;
     }
 
@@ -117,7 +121,8 @@ public sealed class FroxCore
         (int clip, float seconds, int frames) = f.State switch
         {
             FroxState.Crawl => (1, c.WalkSeconds, c.WalkFrames),
-            FroxState.Turn or FroxState.Run or FroxState.Dive => (2, c.RunSeconds, c.RunFrames),
+            FroxState.Turn or FroxState.Run => (2, c.RunSeconds, c.RunFrames),
+            FroxState.Swim or FroxState.Dive => (3, c.SwimSeconds, c.SwimFrames),
             _ => (0, c.RestSeconds, c.RestFrames),
         };
         return new FroxDraw(f.Id, f.Pos, f.Yaw, f.Scale, f.Colour, clip, Frame(clip == 2 ? f.Anim * FroxPreset.RunRate : f.Anim, seconds, frames));
@@ -164,9 +169,15 @@ public sealed class FroxCore
             case FroxState.Run:
                 RunStep(f, dt, ground);
                 return;
+            case FroxState.Swim:
+                SwimStep(f, dt, ground);
+                return;
             case FroxState.Dive:
                 float u = Math.Clamp(f.Clock / FroxPreset.DiveSeconds, 0, 1);
-                f.Pos.Y = WaterLevel - FroxPreset.DiveDepth * WingPreset.Smooth(u);
+                SwimMove(f, dt * (1 - u), ground);
+                float floor = Safe(ground, f.Pos.X, f.Pos.Z);
+                float deep = f.DiveFrom - FroxPreset.DiveDepth * WingPreset.Smooth(u);
+                f.Pos.Y = float.IsFinite(floor) ? Math.Max(deep, Math.Min(f.DiveFrom, floor + FroxPreset.Keel)) : deep;
                 if (u >= 1) GoAway(f, Range(FroxPreset.ReturnMin, FroxPreset.ReturnMax));
                 return;
         }
@@ -258,9 +269,58 @@ public sealed class FroxCore
         if (!wet && left > 0.5f && f.Clock < FroxPreset.RunLongest) return;
         if (_splashes.Count < FroxPreset.SplashQueue) _splashes.Add(new Vector3(f.Pos.X, WaterLevel, f.Pos.Z));
         else Count?.Invoke("frox.splash_dropped");
+        f.State = FroxState.Swim;
+        f.Clock = 0;
+        f.Timer = Range(FroxPreset.SwimMin, FroxPreset.SwimMax);
+        f.WantYaw = f.Yaw;
+        f.LookTimer = 0;
+        Count?.Invoke("frox.splash");
+    }
+
+    /// <summary>Just under the surface toward the deepest water in sight; when its time is up it sinks away (Dive).</summary>
+    void SwimStep(Frox f, float dt, Func<float, float, float> ground)
+    {
+        f.LookTimer -= dt;
+        if (f.LookTimer <= 0)
+        {
+            f.LookTimer = 0.5f;
+            float best = float.PositiveInfinity;
+            for (int i = 0; i < 8; i++)
+            {
+                float a = f.Yaw + Wrap(i * MathF.Tau / 8);
+                if (MathF.Abs(Wrap(a - f.Yaw)) > 2.4f) continue;   // never straight back to the bank
+                float r = FroxPreset.Look * f.Scale;
+                float g = Safe(ground, f.Pos.X + MathF.Sin(a) * r, f.Pos.Z + MathF.Cos(a) * r);
+                if (float.IsFinite(g) && g < best) (best, f.WantYaw) = (g, a);
+            }
+            Count?.Invoke("frox.swim_look");
+        }
+        f.Yaw += Math.Clamp(Wrap(f.WantYaw - f.Yaw), -FroxPreset.TurnRate * dt, FroxPreset.TurnRate * dt);
+        SwimMove(f, dt, ground);   // first where it goes, then its depth there (the bottom may rise under it)
+        float floor = Safe(ground, f.Pos.X, f.Pos.Z);
+        float want = WaterLevel - FroxPreset.SwimDepth * WingPreset.Smooth(f.Clock / 0.4f);
+        f.Pos.Y = float.IsFinite(floor) ? Math.Min(WaterLevel, Math.Max(want, floor + FroxPreset.Keel)) : want;
+        f.Timer -= dt;
+        if (f.Timer > 0) return;
         f.State = FroxState.Dive;
         f.Clock = 0;
-        Count?.Invoke("frox.splash");
+        f.DiveFrom = f.Pos.Y;
+        Count?.Invoke("frox.swim_away");
+    }
+
+    /// <summary>Forward at the swim's speed while the water ahead is water (ground under the line); at the shore it turns instead.</summary>
+    void SwimMove(Frox f, float dt, Func<float, float, float> ground)
+    {
+        var dir = new Vector3(MathF.Sin(f.Yaw), 0, MathF.Cos(f.Yaw));
+        var next = f.Pos + dir * FroxPreset.SwimSpeed * f.Scale * Math.Max(dt, 0);
+        float g = Safe(ground, next.X, next.Z);
+        if (float.IsFinite(g) && g < WaterLevel - FroxPreset.Keel)
+        {
+            f.Pos = new Vector3(next.X, f.Pos.Y, next.Z);
+            return;
+        }
+        f.WantYaw = f.Yaw + MathF.PI * 0.5f;
+        Count?.Invoke("frox.swim_shore");
     }
 
     void GoAway(Frox f, float seconds)

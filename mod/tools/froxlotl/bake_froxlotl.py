@@ -20,7 +20,9 @@ CLIPS = {                          # name: (beats a second, frames, bend, wave n
     'rest': (0.45, 12, 0.035, 0.5, 0.0, 0.0, 1.6),
     'walk': (1.0, 20, 0.20, 0.65, 0.9, 0.6, 1.6),
     'run': (2.4, 16, 0.25, 0.72, 1.035, 0.72, 1.6),
+    'swim': (1.3, 16, 0.30, 0.85, 0.0, 0.0, 2.0),      # legs tucked back along the body (TUCK), the tail drives (0.10.0, user: "swim away underwater")
 }
+TUCK = {'swim': 1.1}                                   # legs swept back (rad) and folded against the flanks
 HEAD_HOLD, TRUNK = 0.85, 0.9
 # the colours shipped: the wild one and the six tropical (the user left the pastels out, 2026-11-27); FroxPreset.Colours matches
 COLOURS = ['original', 'parrot', 'sunset', 'lagoon', 'poison-dart', 'mango', 'hibiscus']
@@ -63,7 +65,7 @@ def main():
     arc = np.r_[0, np.cumsum(np.linalg.norm(np.diff(cp, axis=0), axis=1))]; arc /= arc[-1]
     S = dict(zip(chain, arc))
 
-    def locals_at(t, hz, bend, k_wave, stride, lift, tail_gain):
+    def locals_at(t, hz, bend, k_wave, stride, lift, tail_gain, tuck=0.0):
         ph = 2 * math.pi * hz * t
         q = [np.array(x, float) for x in sk.rest_q]
         wave = lambda s: bend * (TRUNK + tail_gain * s * s) * math.sin(ph - 2 * math.pi * k_wave * s)
@@ -77,6 +79,10 @@ def main():
             th = ph + (0.0 if key in ('FL', 'HR') else math.pi)
             sw = (0.5 + 0.5 * math.cos(th)) ** 2
             turn(up_b, UP, sgn * stride * math.sin(th))
+            if tuck:    # swept back along the body and folded in
+                back = tuck if key in ('HL', 'HR') else 0.8 * tuck
+                turn(up_b, UP, -sgn * back)
+                turn(lo_b, UP, -sgn * 0.6 * back)
             turn(up_b, FWD, -sgn * lift * sw)
             turn(lo_b, FWD, sgn * 0.6 * lift * sw)
         for g, b in enumerate(GILLS): turn(b, UP, 0.12 * math.sin(2 * ph + g))
@@ -87,7 +93,7 @@ def main():
     for name, (hz, frames, bend, k, stride, lift, tg) in CLIPS.items():
         out = []
         for f in range(frames):
-            W = sk.world(locals_at(f / (frames * hz), hz, bend, k, stride, lift, tg))
+            W = sk.world(locals_at(f / (frames * hz), hz, bend, k, stride, lift, tg, TUCK.get(name, 0.0)))
             out.append(m.skin(W))
         baked[name] = (1.0 / hz, out)
 

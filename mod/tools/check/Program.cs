@@ -476,7 +476,7 @@ static class P
         Console.WriteLine("== froxlotls and the frog's animations (0.8.0)");
         string bake = Path.Combine(dir, "assets", "froxlotl", "froxlotl.pzaf");
         var asset = FroxAsset.Read(File.ReadAllBytes(bake));
-        Expect(asset.Vertices > 1000 && asset.Indices.Length % 3 == 0 && asset.Indices.All(i => i < asset.Vertices) && asset.Frames.Length == 3
+        Expect(asset.Vertices > 1000 && asset.Indices.Length % 3 == 0 && asset.Indices.All(i => i < asset.Vertices) && asset.Frames.Length == 4
                && asset.Frames.All(c => c.Length >= 8) && asset.Clips.RunSpeed > asset.Clips.WalkSpeed && asset.Clips.WalkSpeed > 0.3f,
             $"froxlotl bake: {asset.Vertices} vertices, rest/walk/run {asset.Frames[0].Length}/{asset.Frames[1].Length}/{asset.Frames[2].Length} frames, walk {asset.Clips.WalkSpeed:0.00} run {asset.Clips.RunSpeed:0.00} units/s");
         float lo = float.MaxValue, len = 0;
@@ -513,22 +513,34 @@ static class P
             $"froxlotls: {out1.Count} out at night in {string.Join(", ", frox.Pool.Select(c => FroxPreset.Colours[c]))}");
         var one = out1[0];
         var person = new List<Vector3> { one.Pos + new Vector3(50, 0, 0) };
-        float fastest = 0;
+        float fastest = 0, deepest = 0, swam = 0, belowBottom = 0;
         var last = one.Pos;
         int splashes = 0;
-        for (int i = 0; i < 300; i++)
+        bool swum = false;
+        Vector3? entered = null;
+        for (int i = 0; i < 900; i++)
         {
             frox.Step(1f / 60, new Vector3(0, 100, 0), 23.0, true, shore, person);
             var f = frox.All.First(x => x.Id == one.Id);
             if (f.State == FroxState.Run) fastest = Math.Max(fastest, new Vector2(f.Pos.X - last.X, f.Pos.Z - last.Z).Length() * 60);
+            if (f.State == FroxState.Swim)
+            {
+                swum = true;
+                entered ??= f.Pos;
+                deepest = Math.Max(deepest, 100 - f.Pos.Y);
+                swam = Math.Max(swam, new Vector2(f.Pos.X - entered.Value.X, f.Pos.Z - entered.Value.Z).Length());
+                belowBottom = Math.Max(belowBottom, shore(f.Pos.X, f.Pos.Z) + FroxPreset.Keel - f.Pos.Y);
+            }
             last = f.Pos;
             splashes += frox.TakeSplashes().Count;
         }
         var gone = frox.All.First(x => x.Id == one.Id);
         Expect(gone.State == FroxState.Away && splashes >= 1 && fastest > 0 && fastest <= asset.Clips.RunSpeed * FroxPreset.RunRate * one.Scale * 1.01f && fastest > asset.Clips.RunSpeed * one.Scale * 1.5f,
             $"froxlotl: someone 5 m away sends it turning and running into the water ({gone.State}, {splashes} splashes, {fastest:0.00} units/s = its run's own speed {asset.Clips.RunSpeed * FroxPreset.RunRate * one.Scale:0.00}, {one.Scale * asset.Length / 10:0.00} m long)");
+        Expect(swum && deepest > 0.5f && deepest <= FroxPreset.SwimDepth + 0.01f && belowBottom <= 1e-3f && swam > 3 * one.Scale && last.X < entered!.Value.X,
+            $"froxlotl: it swims away under the surface ({deepest:0.0} units deep, {swam:0.0} units out into deeper water, never in the bottom), then sinks away");
         var draws = frox.Snapshot();
-        Expect(draws.All(d => d.Clip is >= 0 and <= 2 && d.Frame >= 0 && d.Frame < asset.Frames[d.Clip].Length), "froxlotl frames in range");
+        Expect(draws.All(d => d.Clip is >= 0 and <= 3 && d.Frame >= 0 && d.Frame < asset.Frames[d.Clip].Length), "froxlotl frames in range");
         frox.Step(0.1f, new Vector3(0, 100, 0), 23.0, false, shore, []);
         Expect(frox.All.Count == 0 && frox.Snapshot().Length == 0, "froxlotls: none outside the Swamp");
         Expect(FroxCore.Frame(0.5f, 1, 20) == 10 && FroxCore.Frame(1.0f, 1, 20) == 0 && FroxCore.Frame(float.NaN, 1, 20) == 0 && FroxCore.Frame(3, 0, 20) == 0,

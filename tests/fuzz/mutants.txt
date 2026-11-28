@@ -235,3 +235,10 @@
 ===
                 outp[4 * i + 3] = 255;
 >>>
+
+@@ WL-frox-keel | PZAMeitouWildlife\mod\src\FroxCore.cs | frox | a swimming froxlotl ignores the bottom (it swims through it in the shallows)
+<<<
+        f.Pos.Y = float.IsFinite(floor) ? Math.Min(WaterLevel, Math.Max(want, floor + FroxPreset.Keel)) : want;
+===
+        f.Pos.Y = want;
+>>>

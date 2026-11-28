@@ -59,11 +59,11 @@ public sealed class FroxAsset
             if (a.Indices[i] >= a.Vertices) throw new InvalidDataException("index past the vertices");
         }
         int clips = Int();
-        if (clips != 3) throw new InvalidDataException("want rest, walk, run");
-        a.Frames = new (Vector3[], Vector3[])[3][];
-        var seconds = new float[3];
-        var counts = new int[3];
-        for (int c = 0; c < 3; c++)
+        if (clips is not (3 or 4)) throw new InvalidDataException("want rest, walk, run (and swim)");
+        a.Frames = new (Vector3[], Vector3[])[4][];
+        var seconds = new float[4];
+        var counts = new int[4];
+        for (int c = 0; c < clips; c++)
         {
             Need(1);
             int len = b[o++];
@@ -89,14 +89,16 @@ public sealed class FroxAsset
                 a.Frames[c][f] = (p, n);
             }
         }
-        a.Clips = new FroxClips(seconds[0], counts[0], seconds[1], counts[1], walkSpeed, seconds[2], counts[2], runSpeed);
+        if (clips == 3)    // an older bake without the swim: it swims with the run
+            (a.Frames[3], seconds[3], counts[3]) = (a.Frames[2], seconds[2], counts[2]);
+        a.Clips = new FroxClips(seconds[0], counts[0], seconds[1], counts[1], walkSpeed, seconds[2], counts[2], runSpeed, seconds[3], counts[3]);
         return a;
     }
 
     /// <summary>One frame as an Ogre mesh in memory (positions, normals, texture coordinates; 32-bit indices).</summary>
     public OgreMesh Mesh(int clip, int frame)
     {
-        var (p, n) = Frames[Math.Clamp(clip, 0, 2)][Math.Clamp(frame, 0, Frames[Math.Clamp(clip, 0, 2)].Length - 1)];
+        var (p, n) = Frames[Math.Clamp(clip, 0, 3)][Math.Clamp(frame, 0, Frames[Math.Clamp(clip, 0, 3)].Length - 1)];
         const ushort stride = 32;
         var data = new byte[Vertices * stride];
         var span = data.AsSpan();
@@ -146,7 +148,7 @@ public static class FroxMesh
         if (!int.TryParse(file.AsSpan(hash + 1, dot - hash - 1), out clip) || !int.TryParse(file.AsSpan(dot + 1, q - dot - 1), out frame)) return false;
         string tex = file[(q + 1)..];
         colour = Array.FindIndex(FroxPreset.Colours, c => TextureName(Array.IndexOf(FroxPreset.Colours, c)) == tex);
-        return clip is >= 0 and <= 2 && frame >= 0 && colour >= 0;
+        return clip is >= 0 and <= 3 && frame >= 0 && colour >= 0;
     }
 
     public static FroxAsset? Asset

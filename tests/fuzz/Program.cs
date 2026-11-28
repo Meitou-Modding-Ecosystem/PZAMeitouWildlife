@@ -31,7 +31,7 @@ static class Program
         new("driver.near", 5000, Near),
         new("fold", 20000, FoldTarget),
         new("wings", 20000, WingsTarget),
-        new("frox", 2000, FroxTarget, fz => fz.Expect(fz.Counted("rule.frox.flee") > 0 && fz.Counted("rule.frox.rest") > 0 && fz.Counted("rule.frox.splash") > 0, "froxlotls never rested, fled or splashed")),
+        new("frox", 2000, FroxTarget, fz => fz.Expect(fz.Counted("rule.frox.flee") > 0 && fz.Counted("rule.frox.rest") > 0 && fz.Counted("rule.frox.splash") > 0 && fz.Counted("rule.frox.swim_away") > 0, "froxlotls never rested, fled, splashed or swam away")),
         new("firefly.blink", 20000, BlinkTarget),
         new("night.sounds", 20000, NightTarget),
         new("frogs", 3000, FrogTarget, fz => fz.Expect(fz.Counted("rule.frogs.leap") > 0 && fz.Counted("rule.frogs.sit") > 0, "frogs never sat or leapt")),
@@ -171,6 +171,12 @@ static class Program
         fz.Expect(float.IsFinite(b) && b >= FireflyPreset.Ember - 1e-5f && b <= 1 + 1e-5f, $"Blink({t}, {period}, {phase}) = {b}");
     }
 
+    static float SafeGround(Func<float, float, float> ground, float x, float z)
+    {
+        try { return ground(x, z); }
+        catch { return float.NaN; }
+    }
+
     static byte[]? s_bake;
 
     /// <summary>The shipped bake (read once from the repo), for the reader's target.</summary>
@@ -188,14 +194,25 @@ static class Program
     }
 
     /// <summary>0.8.0 froxlotls (see the header).</summary>
+    /// <summary>A lagoon shallower than the swim depth: a bank rising east of x = 0, deep holes just off it (so froxlotls sit and dive in),
+    /// and water only <paramref name="depth"/> deep beyond: a swimmer has to keep off the bottom.</summary>
+    static Func<float, float, float> Shallows(float depth) => (x, z) =>
+    {
+        if (x > 0) return 99 + 0.2f * x;
+        float dz = ((z % 20) + 20) % 20 - 10, dx = x + 4;
+        return dx * dx + dz * dz < 9 ? 94 : 100 - depth;
+    };
+
     static void FroxTarget(PzaFuzz fz)
     {
-        var ground = Terrain(fz);
-        var core = new FroxCore((int)fz.Below(1 << 30)) { WaterLevel = fz.Chance(0.8) ? 100 : (float)fz.Range(-500, 500), Count = r => fz.Count("rule." + r) };
+        bool lagoon = fz.Chance(0.3);
+        var ground = lagoon ? Shallows((float)fz.Range(0.35, 1.7)) : Terrain(fz);
+        var core = new FroxCore((int)fz.Below(1 << 30)) { WaterLevel = lagoon || fz.Chance(0.8) ? 100 : (float)fz.Range(-500, 500), Count = r => fz.Count("rule." + r) };
         var clips = core.Clips;
-        var focus = new Vector3((float)fz.Range(-5e4, 5e4), 0, (float)fz.Range(-5e4, 5e4));
+        var focus = lagoon ? new Vector3((float)fz.Range(-20, 40), 100, (float)fz.Range(-200, 200)) : new Vector3((float)fz.Range(-5e4, 5e4), 0, (float)fz.Range(-5e4, 5e4));
         var people = new List<Vector3>();
         var last = new Dictionary<long, Vector3>();
+        var lastState = new Dictionary<long, FroxState>();
         bool swamp = true;
         for (int step = fz.Int(20, 400); step > 0; step--)
         {
@@ -217,6 +234,19 @@ static class Program
             {
                 fz.Expect(WildCore.Finite(f.Pos) && float.IsFinite(f.Yaw), $"non-finite froxlotl {f.Pos} {f.Yaw} in {f.State}");
                 fz.Expect(pool.Contains(f.Colour), $"colour {f.Colour} not in the pool");
+                if (f.State == FroxState.Swim && core.WaterLevel is var wl && float.IsFinite(wl))
+                {
+                    float floor = SafeGround(ground, f.Pos.X, f.Pos.Z);
+                    fz.Expect(f.Pos.Y <= wl + 1e-3f, $"a swimming froxlotl above the water ({f.Pos.Y} over {wl})");
+                    if (float.IsFinite(floor) && floor + FroxPreset.Keel < wl)
+                        fz.Expect(f.Pos.Y >= floor + FroxPreset.Keel - 1e-2f, $"a swimming froxlotl in the bottom ({f.Pos.Y}, bottom {floor})");
+                    if (lastState.GetValueOrDefault(f.Id) == FroxState.Swim && last.TryGetValue(f.Id, out var was) && WildCore.Finite(was))
+                    {
+                        float swum = new Vector2(f.Pos.X - was.X, f.Pos.Z - was.Z).Length();
+                        float res = 2.5e-7f * Math.Max(Math.Max(MathF.Abs(f.Pos.X), MathF.Abs(f.Pos.Z)), 1);
+                        fz.Expect(swum <= FroxPreset.SwimSpeed * f.Scale * used + 1e-3f + 4 * res, $"a froxlotl swam {swum} in {used} s");
+                    }
+                }
                 if (f.State == FroxState.Run && last.TryGetValue(f.Id, out var before) && WildCore.Finite(before))
                 {
                     float moved = new Vector2(f.Pos.X - before.X, f.Pos.Z - before.Z).Length();
@@ -225,10 +255,11 @@ static class Program
                 }
             }
             last = all.ToDictionary(f => f.Id, f => f.Pos);
+            lastState = all.ToDictionary(f => f.Id, f => f.State);
             foreach (var d in core.Snapshot())
             {
-                int frames = d.Clip switch { 0 => clips.RestFrames, 1 => clips.WalkFrames, _ => clips.RunFrames };
-                fz.Expect(d.Clip is >= 0 and <= 2 && d.Frame >= 0 && d.Frame < frames, $"frame {d.Clip}.{d.Frame} out of range");
+                int frames = d.Clip switch { 0 => clips.RestFrames, 1 => clips.WalkFrames, 2 => clips.RunFrames, _ => clips.SwimFrames };
+                fz.Expect(d.Clip is >= 0 and <= 3 && d.Frame >= 0 && d.Frame < frames, $"frame {d.Clip}.{d.Frame} out of range");
             }
             if (fz.Chance(0.05)) fz.Expect(core.TakeSplashes().Count <= FroxPreset.SplashQueue, "froxlotl splashes over the cap");
         }
@@ -258,7 +289,7 @@ static class Program
         try
         {
             var a = FroxAsset.Read(bad);
-            fz.Expect(a.Indices.All(i => i < a.Vertices) && a.Frames.Length == 3 && a.Frames.All(c => c.Length > 0) && a.Frames.All(c => c.All(f => f.P.Length == a.Vertices)),
+            fz.Expect(a.Indices.All(i => i < a.Vertices) && a.Frames.Length == 4 && a.Frames.All(c => c.Length > 0) && a.Frames.All(c => c.All(f => f.P.Length == a.Vertices)),
                 "a flipped bake read back with an index past its vertices or a bad frame");
         }
         catch (InvalidDataException) { }

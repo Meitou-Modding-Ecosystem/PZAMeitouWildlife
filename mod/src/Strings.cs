@@ -17,7 +17,7 @@ public static class Strings
         public const string NightSoundsLabel = "Night sounds";
         public const string NightSoundsHint = "The night ambience (the swamp's frogs and insects, the canyons' crickets) starts at dusk instead of 23:00, and its calls are a little louder. Sound only, never saved.";
         public const string FroxLabel = "Froxlotls";
-        public const string FroxHint = "Froxlotls rest at the Swamp's water edges in a few bright colours, more at night, crawl about now and then, and dash into the water when anyone comes within about 7 m. Model and colours by TheIvoryDisaster. Only drawn, never saved.";
+        public const string FroxHint = "Froxlotls rest at the Swamp's water edges in a few bright colours, more at night, crawl about now and then, and dash into the water and swim away under the surface when anyone comes within about 7 m. Model and colours by TheIvoryDisaster. Only drawn, never saved.";
         public const string FrogsLabel = "Swamp frogs";
         public const string FrogsHint = "Frogs sit at the Swamp's water edges, more at night, and leap into the water with a splash when anyone comes within about 7 m. Only drawn, never saved.";
         public const string LangLabel = "Language";

@@ -1,11 +1,11 @@
 # PZA's Wildlife for Meitou
 
-> **Version 0.9.0** (2026-11-27) · beta · code mod for [Meitou](https://github.com/VlcekM/MeitouClient) `>=0.20.1`
+> **Version 0.10.0** (2026-11-27) · beta · code mod for [Meitou](https://github.com/VlcekM/MeitouClient) `>=0.20.1`
 > (checked on 0.20.1, 0.24.0 and 0.24.1-nightly.20261127) · author: PZA · GPLv3
 > Source: [Meitou-Modding-Ecosystem/PZAMeitouWildlife](https://github.com/Meitou-Modding-Ecosystem/PZAMeitouWildlife)
 
 **Kenshi's world, a little more alive.** Birds come down to the dead. The Swamp gets fireflies, louder nights, frogs on the banks and
-froxlotls that dash into the water when you come near. Everything here is drawn only: nothing touches the simulation, the AI or your
+froxlotls that dash into the water and swim away when you come near. Everything here is drawn only: nothing touches the simulation, the AI or your
 saves, so you can add or remove the mod at any time.
 
 ![Birds circle a dead goat, spiral down and land beside it](media/wildlife-landing.gif)
@@ -49,7 +49,8 @@ saves, so you can add or remove the mod at any time.
 
   ![The frog: the Gorillo at frog size in a matte lizard skin](media/frog.png)
 - **Froxlotls.** Froxlotls (45 to 63 cm) rest at the water's edges, more at night, and crawl about now and then. Come within about 7 m
-  and they turn and dash into the water with a salamander wiggle, slip under with a splash, and come back later. Each visit to the
+  and they turn and dash into the water with a salamander wiggle, splash in, and swim away just under the surface (legs tucked back,
+  tail driving) toward deeper water before sinking out of sight. They come back later. Each visit to the
   Swamp brings four of the seven colours: the wild brown one and three of Parrot, Sunset, Lagoon, Poison Dart, Mango and Hibiscus.
 
 ### Settings
